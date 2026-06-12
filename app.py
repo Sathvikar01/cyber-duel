@@ -1,8 +1,11 @@
 import gradio as gr
 import os
 import json
-import html as html_module
 import torch
+from fastapi import FastAPI
+from fastapi.responses import HTMLResponse
+import uvicorn
+
 try:
     import spaces
 except ImportError:
@@ -126,27 +129,35 @@ with open(html_path, "r", encoding="utf-8") as f:
 
 bridge_head = """
 <script>
-function __aiCallback(sequence) {
-    const ta = document.querySelector('#hidden_input textarea');
-    if (!ta) { console.error('[Bridge] textarea not found'); return; }
-    const nativeSet = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set;
-    nativeSet.call(ta, sequence);
-    ta.dispatchEvent(new Event('input', { bubbles: true }));
-    setTimeout(function() {
-        const btn = document.querySelector('#hidden_btn button');
-        if (btn) btn.click();
-    }, 80);
-}
+window.addEventListener("message", function(e) {
+    if (e.data && e.data.type === "AI_REQUEST") {
+        var ta = document.querySelector('#hidden_input textarea');
+        if (!ta) { console.error('[Bridge] textarea not found'); return; }
+        var nativeSet = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set;
+        nativeSet.call(ta, e.data.sequence);
+        ta.dispatchEvent(new Event('input', { bubbles: true }));
+        setTimeout(function() {
+            var btn = document.querySelector('#hidden_btn button');
+            if (btn) btn.click();
+        }, 80);
+    }
+});
 
 function handleAIResponse(responseStr) {
     if (!responseStr) return;
     try {
         var data = JSON.parse(responseStr);
-        if (typeof window.__onAIResponse === 'function') {
-            window.__onAIResponse(data);
+        var iframe = document.querySelector('iframe');
+        if (iframe && iframe.contentWindow) {
+            iframe.contentWindow.postMessage({
+                type: 'AI_RESPONSE',
+                sequence: data.sequence,
+                reasoning: data.reasoning,
+                counterMove: data.counterMove
+            }, '*');
         }
     } catch(e) {
-        console.error('[Bridge] parse error', e);
+        console.error('[Bridge] error', e);
     }
 }
 </script>
@@ -159,8 +170,14 @@ footer { display: none !important; }
 .bridge-hidden { position: absolute !important; left: -9999px !important; opacity: 0 !important; height: 0 !important; overflow: hidden !important; pointer-events: none !important; }
 """
 
+app = FastAPI()
+
+@app.get("/game")
+async def serve_game():
+    return HTMLResponse(content=game_html)
+
 with gr.Blocks(css=custom_css, head=bridge_head) as demo:
-    gr.HTML(game_html)
+    gr.Iframe(src="/game", height=800, width="100%", sandbox="allow-scripts allow-same-origin")
 
     with gr.Row(elem_classes=["bridge-hidden"]):
         hidden_input = gr.Textbox(elem_id="hidden_input")
@@ -179,8 +196,7 @@ with gr.Blocks(css=custom_css, head=bridge_head) as demo:
             js="(val) => { handleAIResponse(val); return []; }"
         )
 
+app = gr.mount_gradio_app(app, demo, path="/")
+
 if __name__ == "__main__":
-    demo.launch(
-        server_name="0.0.0.0",
-        server_port=int(os.environ.get("PORT", 7860)),
-    )
+    uvicorn.run(app, host="0.0.0.0", port=int(os.environ.get("PORT", 7860)))

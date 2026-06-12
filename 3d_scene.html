@@ -449,15 +449,15 @@
     const gemmaLog = [];  // last N decisions
 
     function callGemma(seq) {
-        if (window.__aiCallback) window.__aiCallback(seq);
+        try { window.parent.postMessage({ type: 'AI_REQUEST', sequence: seq }, '*'); } catch(e) {}
     }
 
-    window.__onAIResponse = function(data) {
-        if (!data) return;
+    window.addEventListener("message", function(e) {
+        if (!e.data || e.data.type !== "AI_RESPONSE") return;
         gemmaCount++;
 
-        const rawCounter = (data.counterMove || '').trim().toLowerCase().replace(/\s+/g, '_');
-        const reasoning = data.reasoning || '';
+        const rawCounter = (e.data.counterMove || '').trim().toLowerCase().replace(/\s+/g, '_');
+        const reasoning = e.data.reasoning || '';
 
         document.getElementById('gemma-reasoning').innerText = reasoning || 'No reasoning provided';
         document.getElementById('gemma-move').innerText = rawCounter || '—';
@@ -482,7 +482,7 @@
 
         const logEntry = {
             time: new Date().toLocaleTimeString(),
-            sequence: data.sequence || 'Unknown',
+            sequence: e.data.sequence || 'Unknown',
             move: rawCounter,
             persona: newPersona ? PERSONAS[newPersona].name : 'N/A',
             icon: newPersona ? PERSONAS[newPersona].icon : '—',
@@ -497,7 +497,7 @@
         ).join('');
 
         document.getElementById('gemma-count').innerText = `Responses: ${gemmaCount}`;
-    };
+    });
 
     // ═══════════════════════════════════════════════════════════════
     //  GAME STATE — 3-round system
