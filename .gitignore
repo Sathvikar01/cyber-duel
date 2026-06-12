@@ -1,0 +1,15 @@
+__pycache__/
+*.pyc
+.agents/
+stickman_duel_data/
+3d-game/
+node_modules/
+*.js
+*.ts
+*.tsx
+*.json
+*.log
+*.md
+!README.md
+!requirements.txt
+!combat_dataset.json

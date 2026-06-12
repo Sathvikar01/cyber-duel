@@ -1,6 +1,5 @@
 import gradio as gr
 import os
-import base64
 import json
 import html as html_module
 import torch
@@ -125,14 +124,33 @@ html_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "3d_scene.h
 with open(html_path, "r", encoding="utf-8") as f:
     game_html = f.read()
 
-game_html_escaped = html_module.escape(game_html, quote=True)
+bridge_head = """
+<script>
+function __aiCallback(sequence) {
+    const ta = document.querySelector('#hidden_input textarea');
+    if (!ta) { console.error('[Bridge] textarea not found'); return; }
+    const nativeSet = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set;
+    nativeSet.call(ta, sequence);
+    ta.dispatchEvent(new Event('input', { bubbles: true }));
+    setTimeout(function() {
+        const btn = document.querySelector('#hidden_btn button');
+        if (btn) btn.click();
+    }, 80);
+}
 
-iframe_html = (
-    f'<iframe id="game-iframe" '
-    f'srcdoc="{game_html_escaped}" '
-    f'style="position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; border: none; z-index: 9999;">'
-    f'</iframe>'
-)
+function handleAIResponse(responseStr) {
+    if (!responseStr) return;
+    try {
+        var data = JSON.parse(responseStr);
+        if (typeof window.__onAIResponse === 'function') {
+            window.__onAIResponse(data);
+        }
+    } catch(e) {
+        console.error('[Bridge] parse error', e);
+    }
+}
+</script>
+"""
 
 custom_css = """
 body, html { margin: 0 !important; padding: 0 !important; overflow: hidden !important; height: 100% !important; }
@@ -141,50 +159,8 @@ footer { display: none !important; }
 .bridge-hidden { position: absolute !important; left: -9999px !important; opacity: 0 !important; height: 0 !important; overflow: hidden !important; pointer-events: none !important; }
 """
 
-listener_script = """
-<script>
-window.addEventListener("message", function(e) {
-    if (e.data && e.data.type === "AI_REQUEST") {
-        const input_box = document.querySelector("#hidden_input textarea, #hidden_input input");
-        if (input_box) {
-            input_box.value = e.data.sequence;
-            input_box.dispatchEvent(new Event('input', { bubbles: true }));
-            setTimeout(() => {
-                const btn = document.querySelector("#hidden_btn button");
-                if (btn) btn.click();
-                else {
-                    const wrapper = document.querySelector("#hidden_btn");
-                    if (wrapper) wrapper.click();
-                }
-            }, 100);
-        } else {
-            console.error("[Bridge] Hidden input not found");
-        }
-    }
-});
-
-function handleAIResponse(responseStr) {
-    if (!responseStr) return;
-    try {
-        const data = JSON.parse(responseStr);
-        const iframe = document.getElementById("game-iframe");
-        if (iframe && iframe.contentWindow) {
-            iframe.contentWindow.postMessage({
-                type: 'AI_RESPONSE',
-                sequence: data.sequence,
-                reasoning: data.reasoning,
-                counterMove: data.counterMove
-            }, '*');
-        }
-    } catch(err) {
-        console.error("[Bridge] Error parsing response", err);
-    }
-}
-</script>
-"""
-
-with gr.Blocks(css=custom_css, head=listener_script) as demo:
-    gr.HTML(iframe_html)
+with gr.Blocks(css=custom_css, head=bridge_head) as demo:
+    gr.HTML(game_html)
 
     with gr.Row(elem_classes=["bridge-hidden"]):
         hidden_input = gr.Textbox(elem_id="hidden_input")
@@ -207,5 +183,4 @@ if __name__ == "__main__":
     demo.launch(
         server_name="0.0.0.0",
         server_port=int(os.environ.get("PORT", 7860)),
-        allowed_paths=[os.path.dirname(os.path.abspath(__file__))],
     )

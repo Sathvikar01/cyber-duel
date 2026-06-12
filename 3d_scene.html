@@ -449,21 +449,19 @@
     const gemmaLog = [];  // last N decisions
 
     function callGemma(seq) {
-        try { window.parent.postMessage({ type: 'AI_REQUEST', sequence: seq }, '*'); } catch(e) {}
+        if (window.__aiCallback) window.__aiCallback(seq);
     }
 
-    window.addEventListener("message", function(e) {
-        if (!e.data || e.data.type !== "AI_RESPONSE") return;
+    window.__onAIResponse = function(data) {
+        if (!data) return;
         gemmaCount++;
 
-        const rawCounter = (e.data.counterMove || '').trim().toLowerCase().replace(/\s+/g, '_');
-        const reasoning = e.data.reasoning || '';
+        const rawCounter = (data.counterMove || '').trim().toLowerCase().replace(/\s+/g, '_');
+        const reasoning = data.reasoning || '';
 
-        // Update Gemma panel — reasoning
         document.getElementById('gemma-reasoning').innerText = reasoning || 'No reasoning provided';
         document.getElementById('gemma-move').innerText = rawCounter || '—';
 
-        // Map to persona
         let newPersona = GEMMA_TO_PERSONA[rawCounter] || null;
         if (!newPersona) {
             for (const [key, p] of Object.entries(GEMMA_TO_PERSONA)) {
@@ -482,10 +480,9 @@
             personaEl.style.color = '#666';
         }
 
-        // Add to log
         const logEntry = {
             time: new Date().toLocaleTimeString(),
-            sequence: e.data.sequence || 'Unknown',
+            sequence: data.sequence || 'Unknown',
             move: rawCounter,
             persona: newPersona ? PERSONAS[newPersona].name : 'N/A',
             icon: newPersona ? PERSONAS[newPersona].icon : '—',
@@ -494,14 +491,13 @@
         gemmaLog.unshift(logEntry);
         if (gemmaLog.length > 200) gemmaLog.pop();
 
-        // Render log
         const logEl = document.getElementById('gemma-log-entries');
         logEl.innerHTML = gemmaLog.map(l =>
             `<div class="gemma-log-entry">${l.time} · ${l.move} → ${l.icon} ${l.persona}</div>`
         ).join('');
 
         document.getElementById('gemma-count').innerText = `Responses: ${gemmaCount}`;
-    });
+    };
 
     // ═══════════════════════════════════════════════════════════════
     //  GAME STATE — 3-round system
