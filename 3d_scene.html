@@ -1,0 +1,1106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Cyberpunk Duel AI</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        html, body { height: 100%; overflow: hidden; background: #0a0a12; font-family: 'Segoe UI', monospace; color: #fff; }
+        canvas { display: block; width: 100vw; height: 100vh; }
+
+        /* ── HUD Top ── */
+        #hud {
+            position: absolute; top: 0; left: 0; width: 100%; padding: 12px 20px;
+            display: flex; justify-content: space-between; align-items: flex-start;
+            pointer-events: none; z-index: 10;
+        }
+        .hp-container { width: 34%; display: flex; flex-direction: column; gap: 3px; }
+        .hp-label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 2px; }
+        .hp-label.player { color: #00d4ff; text-shadow: 0 0 8px #00d4ff66; }
+        .hp-label.npc { color: #ff3344; text-align: right; text-shadow: 0 0 8px #ff334466; }
+        .hp-bar-bg { width: 100%; height: 14px; background: #1a1a2e; border-radius: 3px; border: 1px solid #333; overflow: hidden; }
+        .hp-bar { height: 100%; border-radius: 2px; transition: width 0.3s ease; }
+        .hp-bar.player-bar { background: linear-gradient(90deg, #00d4ff, #0088ff); box-shadow: 0 0 8px #00d4ff44; }
+        .hp-bar.npc-bar { background: linear-gradient(90deg, #ff3344, #ff6644); box-shadow: 0 0 8px #ff334444; float: right; }
+
+        /* ── Center top ── */
+        #center-top {
+            position: absolute; top: 10px; left: 50%; transform: translateX(-50%);
+            text-align: center; pointer-events: none; z-index: 10;
+        }
+        #round-info { font-size: 10px; color: #666; letter-spacing: 2px; text-transform: uppercase; }
+        #score-display { font-size: 18px; font-weight: 900; margin: 2px 0; letter-spacing: 4px; }
+        #score-player { color: #00d4ff; }
+        #score-npc { color: #ff3344; }
+        #score-dash { color: #444; }
+        #persona-badge {
+            display: inline-block; padding: 2px 12px; border-radius: 10px; font-size: 11px;
+            font-weight: 700; letter-spacing: 1px; text-transform: uppercase;
+            border: 1px solid #555; background: rgba(0,0,0,0.6);
+            transition: all 0.4s ease; margin-top: 2px;
+        }
+        #ai-status { font-size: 10px; margin-top: 3px; color: #ffa500; text-shadow: 0 0 6px #ffa50044; min-height: 12px; }
+
+        /* ── Persona Splash ── */
+        #persona-splash {
+            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            font-size: 22px; font-weight: 900; pointer-events: none; z-index: 25;
+            opacity: 0; transition: opacity 0.2s, transform 0.3s;
+            text-shadow: 0 0 30px rgba(255,255,255,0.4);
+            letter-spacing: 3px; text-transform: uppercase;
+        }
+        #hit-splash {
+            position: absolute; top: 42%; left: 50%; transform: translate(-50%,-50%);
+            font-size: 30px; font-weight: 900; pointer-events: none; z-index: 20;
+            opacity: 0; transition: opacity 0.15s; text-shadow: 0 0 12px rgba(255,255,255,0.3);
+        }
+
+        /* ── GEMMA ANALYSIS PANEL (right side) ── */
+        #gemma-panel {
+            position: absolute; top: 55px; right: 12px; width: 260px;
+            pointer-events: none; z-index: 10;
+            background: rgba(10, 10, 20, 0.85); border: 1px solid #2a2a3e;
+            border-radius: 6px; padding: 10px 12px;
+            backdrop-filter: blur(4px);
+        }
+        #gemma-panel-title {
+            font-size: 10px; color: #aa66ff; letter-spacing: 2px;
+            text-transform: uppercase; margin-bottom: 6px;
+            border-bottom: 1px solid #2a2a3e; padding-bottom: 4px;
+        }
+        #gemma-reasoning {
+            font-size: 10px; color: #888; line-height: 1.4; margin-bottom: 6px;
+            max-height: 60px; overflow: hidden;
+        }
+        #gemma-action {
+            font-size: 10px; margin-bottom: 4px;
+        }
+        #gemma-action .label { color: #666; }
+        #gemma-action .value { color: #aa66ff; font-weight: 700; }
+        #gemma-persona-switch {
+            font-size: 10px; margin-bottom: 6px;
+        }
+        #gemma-persona-switch .label { color: #666; }
+        #gemma-persona-switch .value { font-weight: 700; }
+        #gemma-log {
+            border-top: 1px solid #2a2a3e; padding-top: 6px; margin-top: 4px;
+        }
+        #gemma-log-title { font-size: 9px; color: #555; margin-bottom: 4px; text-transform: uppercase; letter-spacing: 1px; }
+        #gemma-log-entries { font-size: 9px; color: #555; line-height: 1.5; max-height: 80px; overflow: hidden; }
+        .gemma-log-entry { border-left: 2px solid #aa66ff33; padding-left: 6px; margin-bottom: 3px; }
+        #gemma-count { font-size: 9px; color: #444; margin-top: 4px; }
+
+        /* ── Bottom HUD ── */
+        #bottom-hud {
+            position: absolute; bottom: 0; left: 0; width: 100%; padding: 8px 16px;
+            pointer-events: none; z-index: 10;
+            display: flex; justify-content: space-between; align-items: flex-end;
+        }
+        #controls-hint { font-size: 9px; color: #444; line-height: 1.5; }
+        #controls-hint kbd {
+            display: inline-block; padding: 1px 3px; background: #1a1a2e;
+            border: 1px solid #333; border-radius: 2px; color: #555; font-size: 8px;
+        }
+        #pattern-info { text-align: right; max-width: 280px; }
+        #pattern-info-title { font-size: 9px; color: #555; letter-spacing: 1px; text-transform: uppercase; margin-bottom: 2px; }
+        #pattern-reasoning { font-size: 9px; color: #444; line-height: 1.3; max-height: 30px; overflow: hidden; }
+        #timing-info { font-size: 9px; color: #444; margin-top: 2px; }
+        #confidence-row { display: flex; align-items: center; gap: 6px; justify-content: flex-end; margin-top: 3px; }
+        #confidence-label { font-size: 9px; color: #555; }
+        #confidence-bar-bg { width: 70px; height: 4px; background: #1a1a2e; border-radius: 2px; overflow: hidden; }
+        #confidence-bar { height: 100%; width: 0%; border-radius: 2px; background: linear-gradient(90deg, #ff3344, #ffa500, #00ff88); transition: width 0.5s; }
+        #memory-info { font-size: 8px; color: #333; margin-top: 2px; }
+
+        /* ── Round Transition ── */
+        #round-overlay {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.85); display: none; z-index: 40;
+            flex-direction: column; align-items: center; justify-content: center;
+            pointer-events: none;
+        }
+        #round-overlay h2 { font-size: 36px; margin-bottom: 6px; }
+        #round-overlay p { font-size: 16px; color: #888; }
+
+        /* ── Game Over ── */
+        #game-over {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.92); display: none; z-index: 50;
+            flex-direction: column; align-items: center; justify-content: center;
+        }
+        #game-over-container {
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            max-height: 90vh; max-width: 800px; padding: 20px;
+        }
+        #game-over h1 { font-size: 38px; margin-bottom: 4px; }
+        #game-over p { font-size: 13px; color: #999; margin-bottom: 16px; text-align: center; line-height: 1.6; white-space: pre-line; }
+        #go-analysis-panel {
+            background: rgba(20, 20, 30, 0.8); border: 1px solid #334; border-radius: 8px;
+            padding: 16px; width: 100%; min-width: 500px; max-width: 600px; margin-bottom: 20px;
+            display: flex; flex-direction: column; gap: 12px;
+            overflow-y: auto; max-height: 45vh;
+        }
+        .go-section h3 { font-size: 12px; color: #aa66ff; text-transform: uppercase; letter-spacing: 1px; border-bottom: 1px solid #334; padding-bottom: 4px; margin-bottom: 6px; }
+        .go-section-content { font-size: 11px; color: #bbb; line-height: 1.5; }
+        .go-log-entry { padding: 8px 0; border-bottom: 1px solid #223; }
+        .go-log-entry:last-child { border-bottom: none; }
+        .go-log-moves { color: #00d4ff; }
+        .go-log-ai { color: #ffa500; font-weight: bold; }
+        #game-over button {
+            padding: 12px 36px; font-size: 14px; cursor: pointer;
+            background: linear-gradient(135deg, #00d4ff, #0066ff); color: #fff;
+            border: none; border-radius: 5px; font-weight: 700;
+            text-transform: uppercase; letter-spacing: 2px; pointer-events: all;
+            flex-shrink: 0;
+        }
+        #game-over button:hover { filter: brightness(1.2); }
+
+        /* ── Start Overlay ── */
+        #overlay {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.82); color: white;
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            font-size: 1.5rem; cursor: pointer; z-index: 100;
+        }
+        #overlay small { font-size: 12px; color: #777; margin-top: 10px; max-width: 380px; text-align: center; line-height: 1.5; }
+        #memory-badge { font-size: 11px; color: #aa66ff; margin-top: 12px; }
+    </style>
+</head>
+<body>
+    <div id="overlay">
+        ⚔️ CYBERPUNK DUEL AI ⚔️
+        <small>Gemma AI watches your moves, learns your rhythm, and switches between 5 fighting personas. Best of 3 rounds.</small>
+        <div id="memory-badge"></div>
+    </div>
+
+    <div id="hud">
+        <div class="hp-container">
+            <div class="hp-label player">PLAYER</div>
+            <div class="hp-bar-bg"><div class="hp-bar player-bar" id="player-hp" style="width:100%"></div></div>
+        </div>
+        <div class="hp-container">
+            <div class="hp-label npc">NPC — GEMMA AI</div>
+            <div class="hp-bar-bg"><div class="hp-bar npc-bar" id="npc-hp" style="width:100%"></div></div>
+        </div>
+    </div>
+
+    <div id="center-top">
+        <div id="round-info">Round 1 of 3</div>
+        <div id="score-display"><span id="score-player">0</span><span id="score-dash"> — </span><span id="score-npc">0</span></div>
+        <div id="persona-badge">⚖️ BALANCED</div>
+        <div id="ai-status"></div>
+    </div>
+
+    <div id="persona-splash"></div>
+    <div id="hit-splash"></div>
+
+    <!-- GEMMA ANALYSIS PANEL -->
+    <div id="gemma-panel">
+        <div id="gemma-panel-title">🧠 Gemma AI Analysis</div>
+        <div id="gemma-reasoning">Waiting for first response...</div>
+        <div id="gemma-action"><span class="label">Counter move: </span><span class="value" id="gemma-move">—</span></div>
+        <div id="gemma-persona-switch"><span class="label">Persona switch: </span><span class="value" id="gemma-persona">—</span></div>
+        <div id="gemma-log">
+            <div id="gemma-log-title">Decision Log</div>
+            <div id="gemma-log-entries"></div>
+        </div>
+        <div id="gemma-count">Responses: 0</div>
+    </div>
+
+    <div id="bottom-hud">
+        <div id="controls-hint">
+            <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> Move
+            <kbd>J</kbd> Jab <kbd>K</kbd> Low Kick
+            <kbd>L</kbd> Cross <kbd>U</kbd> Uppercut
+            <kbd>I</kbd> Roundhouse
+        </div>
+        <div id="pattern-info">
+            <div id="pattern-info-title">📊 Markov Fallback</div>
+            <div id="pattern-reasoning">Observing...</div>
+            <div id="timing-info"></div>
+            <div id="confidence-row">
+                <span id="confidence-label">Confidence: 0%</span>
+                <div id="confidence-bar-bg"><div id="confidence-bar"></div></div>
+            </div>
+            <div id="memory-info"></div>
+        </div>
+    </div>
+
+    <!-- Round Transition -->
+    <div id="round-overlay">
+        <h2 id="round-result-text"></h2>
+        <p id="round-next-text"></p>
+    </div>
+
+    <div id="game-over">
+        <div id="game-over-container">
+            <h1 id="go-title"></h1>
+            <p id="go-subtitle"></p>
+            <div id="go-analysis-panel">
+                <div class="go-section">
+                    <h3>Your Patterns Analyzed</h3>
+                    <div id="go-moves" class="go-section-content"></div>
+                </div>
+                <div class="go-section">
+                    <h3>Gemma's Counter-Measures</h3>
+                    <div id="go-log" class="go-section-content"></div>
+                </div>
+                <div class="go-section">
+                    <h3>Data Storage (Permanent Memory)</h3>
+                    <div class="go-section-content">All your patterns and timing data are permanently stored in your browser's <b>localStorage</b>. The AI will remember your fighting style next time you play.</div>
+                </div>
+            </div>
+            <button id="go-restart">NEW MATCH (3 ROUNDS)</button>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r140/three.min.js"></script>
+    <script>
+    // ═══════════════════════════════════════════════════════════════
+    const MOVES = ['jab', 'cross', 'low_kick', 'roundhouse', 'uppercut'];
+    const DAMAGE = { jab: 6, cross: 10, low_kick: 8, roundhouse: 14, uppercut: 16 };
+    const TOTAL_ROUNDS = 3;
+
+    // ═══════════════════════════════════════════════════════════════
+    //  5 NPC PERSONAS
+    // ═══════════════════════════════════════════════════════════════
+    const PERSONAS = {
+        defensive: {
+            name: 'DEFENSIVE', icon: '🛡️', shieldColor: 0x0088ff, badgeColor: '#0088ff',
+            blockChance: 0.70, counterDelayBase: 24,
+            atkMin: 80, atkMax: 130,
+            weights: { jab: 35, cross: 25, low_kick: 25, roundhouse: 10, uppercut: 5 },
+            dmgMul: 0.8, desc: 'Blocks everything, counters carefully'
+        },
+        aggressive: {
+            name: 'AGGRESSIVE', icon: '⚔️', shieldColor: 0xff2200, badgeColor: '#ff3344',
+            blockChance: 0.20, counterDelayBase: 8,
+            atkMin: 30, atkMax: 55,
+            weights: { jab: 10, cross: 20, low_kick: 15, roundhouse: 30, uppercut: 25 },
+            dmgMul: 1.3, desc: 'Relentless pressure, heavy damage'
+        },
+        balanced: {
+            name: 'BALANCED', icon: '⚖️', shieldColor: 0xffaa00, badgeColor: '#ffa500',
+            blockChance: 0.45, counterDelayBase: 16,
+            atkMin: 50, atkMax: 80,
+            weights: { jab: 20, cross: 20, low_kick: 20, roundhouse: 20, uppercut: 20 },
+            dmgMul: 1.0, desc: 'Adapts to the situation'
+        },
+        punisher: {
+            name: 'PUNISHER', icon: '🎯', shieldColor: 0xaa44ff, badgeColor: '#aa66ff',
+            blockChance: 0.65, counterDelayBase: 6,
+            atkMin: 45, atkMax: 70,
+            weights: { jab: 5, cross: 30, low_kick: 10, roundhouse: 20, uppercut: 35 },
+            dmgMul: 1.4, desc: 'Parries your spam, devastating counters'
+        },
+        evasive: {
+            name: 'EVASIVE', icon: '🏃', shieldColor: 0x00cc66, badgeColor: '#00cc66',
+            blockChance: 0.35, counterDelayBase: 18,
+            atkMin: 55, atkMax: 90,
+            weights: { jab: 30, cross: 15, low_kick: 35, roundhouse: 15, uppercut: 5 },
+            dmgMul: 0.9, desc: 'Refuses bait, pokes safely'
+        }
+    };
+
+    const GEMMA_TO_PERSONA = {
+        backstep:'defensive', sidestep:'defensive', duck:'defensive', roll:'defensive', defensive_stance:'defensive',
+        clinch:'aggressive', sweep:'aggressive', throw:'aggressive', roundhouse:'aggressive',
+        spinning_kick:'aggressive', axe_kick:'aggressive', charge_attack:'aggressive', aggressive_stance:'aggressive',
+        uppercut:'balanced', cross:'balanced', hook:'balanced', side_kick:'balanced', dragon_punch:'balanced',
+        parry:'punisher', high_block:'punisher', low_block:'punisher',
+        low_kick:'evasive', dash_forward:'evasive', dash_backward:'evasive', fireball:'evasive',
+        jab:'evasive', circle_left:'evasive', circle_right:'evasive',
+    };
+
+    // ═══════════════════════════════════════════════════════════════
+    //  PATTERN ENGINE — with localStorage persistence
+    // ═══════════════════════════════════════════════════════════════
+    class PatternEngine {
+        constructor() {
+            this.history = [];
+            this.frequency = {};
+            this.transitions = {};
+            this.timestamps = [];
+            this.intervals = [];
+            MOVES.forEach(m => {
+                this.frequency[m] = 0;
+                this.transitions[m] = {};
+                MOVES.forEach(n => this.transitions[m][n] = 0);
+            });
+            this._loadFromStorage();
+        }
+
+        record(move) {
+            const now = performance.now();
+            const prev = this.history.length > 0 ? this.history[this.history.length - 1] : null;
+            this.history.push(move);
+            this.frequency[move] = (this.frequency[move] || 0) + 1;
+            if (prev && this.transitions[prev]) this.transitions[prev][move]++;
+            if (this.timestamps.length > 0) this.intervals.push(now - this.timestamps[this.timestamps.length - 1]);
+            this.timestamps.push(now);
+            this._saveToStorage();
+        }
+
+        get confidence() { const n = this.history.length; return n === 0 ? 0 : 1 - Math.exp(-n * 0.12); }
+        get avgInterval() {
+            if (!this.intervals.length) return null;
+            const r = this.intervals.slice(-10);
+            return r.reduce((a,b)=>a+b,0)/r.length;
+        }
+        get rhythmConsistency() {
+            if (this.intervals.length < 3) return 0;
+            const r = this.intervals.slice(-8);
+            const avg = r.reduce((a,b)=>a+b,0)/r.length;
+            const v = r.reduce((s,x)=>s+(x-avg)**2,0)/r.length;
+            return Math.max(0, Math.min(1, 1-Math.sqrt(v)/(avg||1)));
+        }
+        isAttackImminent() {
+            if (this.rhythmConsistency < 0.3 || this.intervals.length < 2) return false;
+            return (this.avgInterval - (performance.now() - this.timestamps[this.timestamps.length-1])) < 200;
+        }
+        predict() {
+            const n = this.history.length;
+            if (n === 0) return MOVES[Math.floor(Math.random()*MOVES.length)];
+            const last = this.history[n-1], row = this.transitions[last];
+            const total = Object.values(row).reduce((a,b)=>a+b,0);
+            if (total > 0 && this.confidence > 0.2) {
+                let best=null, bc=-1;
+                for (const m of MOVES) if (row[m]>bc){bc=row[m];best=m;}
+                if (Math.random() < this.confidence * 0.85) return best;
+            }
+            let best=null, bf=-1;
+            for (const m of MOVES) if (this.frequency[m]>bf){bf=this.frequency[m];best=m;}
+            if (Math.random() < this.confidence * 0.6) return best;
+            return MOVES[Math.floor(Math.random()*MOVES.length)];
+        }
+        getReasoning() {
+            const n = this.history.length;
+            if (n < 3) return `Collecting data (${n} moves)...`;
+            let top=null,tc=0;
+            for (const m of MOVES) if (this.frequency[m]>tc){tc=this.frequency[m];top=m;}
+            return `${n} moves. Favors ${top} (${Math.round(tc/n*100)}%). Predicting: ${this.predict()}.`;
+        }
+        getTimingInfo() {
+            const a = this.avgInterval;
+            if (!a) return '';
+            let t = `⏱ ${(a/1000).toFixed(1)}s avg · Rhythm: ${Math.round(this.rhythmConsistency*100)}%`;
+            if (this.rhythmConsistency > 0.6) t += ' · ⚠ LOCKED';
+            return t;
+        }
+
+        // localStorage persistence
+        _saveToStorage() {
+            try {
+                localStorage.setItem('npc_ai_history', JSON.stringify(this.history));
+                localStorage.setItem('npc_ai_frequency', JSON.stringify(this.frequency));
+                localStorage.setItem('npc_ai_transitions', JSON.stringify(this.transitions));
+            } catch(e) {}
+        }
+        _loadFromStorage() {
+            try {
+                const h = localStorage.getItem('npc_ai_history');
+                const f = localStorage.getItem('npc_ai_frequency');
+                const t = localStorage.getItem('npc_ai_transitions');
+                if (h) this.history = JSON.parse(h);
+                if (f) this.frequency = JSON.parse(f);
+                if (t) this.transitions = JSON.parse(t);
+            } catch(e) {}
+        }
+        get totalLifetimeMoves() { return this.history.length; }
+    }
+
+    const patternEngine = new PatternEngine();
+
+    // Show memory status on start screen
+    if (patternEngine.totalLifetimeMoves > 0) {
+        document.getElementById('memory-badge').innerText =
+            `🧠 Memory loaded: ${patternEngine.totalLifetimeMoves} moves from previous sessions`;
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    //  PERSONA SYSTEM
+    // ═══════════════════════════════════════════════════════════════
+    let activePersonaKey = 'balanced';
+    function getP() { return PERSONAS[activePersonaKey]; }
+
+    function switchPersona(newKey) {
+        if (newKey === activePersonaKey) return;
+        activePersonaKey = newKey;
+        const p = PERSONAS[newKey];
+        shieldMat.color.setHex(p.shieldColor);
+        const badge = document.getElementById('persona-badge');
+        badge.innerText = `${p.icon} ${p.name}`;
+        badge.style.borderColor = p.badgeColor; badge.style.color = p.badgeColor;
+        badge.style.boxShadow = `0 0 12px ${p.badgeColor}44`;
+        showPersonaSplash(`${p.icon} ${p.name}`, p.badgeColor);
+        setStatus(`→ ${p.name}: ${p.desc}`);
+    }
+
+    function pickMove() {
+        const w = getP().weights; const total = Object.values(w).reduce((a,b)=>a+b,0);
+        let r = Math.random() * total;
+        for (const m of MOVES) { r -= w[m]; if (r <= 0) return m; }
+        return MOVES[4];
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    //  GEMMA — called every hit, selects persona, shown in panel
+    // ═══════════════════════════════════════════════════════════════
+    let gemmaCount = 0;
+    const gemmaLog = [];  // last N decisions
+
+    function callGemma(seq) {
+        try { window.parent.postMessage({ type: 'AI_REQUEST', sequence: seq }, '*'); } catch(e) {}
+    }
+
+    window.addEventListener("message", function(e) {
+        if (!e.data || e.data.type !== "AI_RESPONSE") return;
+        gemmaCount++;
+
+        const rawCounter = (e.data.counterMove || '').trim().toLowerCase().replace(/\s+/g, '_');
+        const reasoning = e.data.reasoning || '';
+
+        // Update Gemma panel — reasoning
+        document.getElementById('gemma-reasoning').innerText = reasoning || 'No reasoning provided';
+        document.getElementById('gemma-move').innerText = rawCounter || '—';
+
+        // Map to persona
+        let newPersona = GEMMA_TO_PERSONA[rawCounter] || null;
+        if (!newPersona) {
+            for (const [key, p] of Object.entries(GEMMA_TO_PERSONA)) {
+                if (rawCounter.includes(key)) { newPersona = p; break; }
+            }
+        }
+
+        const personaEl = document.getElementById('gemma-persona');
+        if (newPersona) {
+            const p = PERSONAS[newPersona];
+            personaEl.innerText = `${p.icon} ${p.name}`;
+            personaEl.style.color = p.badgeColor;
+            switchPersona(newPersona);
+        } else {
+            personaEl.innerText = 'No change';
+            personaEl.style.color = '#666';
+        }
+
+        // Add to log
+        const logEntry = {
+            time: new Date().toLocaleTimeString(),
+            sequence: e.data.sequence || 'Unknown',
+            move: rawCounter,
+            persona: newPersona ? PERSONAS[newPersona].name : 'N/A',
+            icon: newPersona ? PERSONAS[newPersona].icon : '—',
+            reasoning: reasoning
+        };
+        gemmaLog.unshift(logEntry);
+        if (gemmaLog.length > 200) gemmaLog.pop();
+
+        // Render log
+        const logEl = document.getElementById('gemma-log-entries');
+        logEl.innerHTML = gemmaLog.map(l =>
+            `<div class="gemma-log-entry">${l.time} · ${l.move} → ${l.icon} ${l.persona}</div>`
+        ).join('');
+
+        document.getElementById('gemma-count').innerText = `Responses: ${gemmaCount}`;
+    });
+
+    // ═══════════════════════════════════════════════════════════════
+    //  GAME STATE — 3-round system
+    // ═══════════════════════════════════════════════════════════════
+    const MAX_HP = 100;
+    let playerHP = MAX_HP, npcHP = MAX_HP;
+    let currentRound = 1, playerWins = 0, npcWins = 0;
+    let gameOver = false, roundOver = false, time = 0;
+    let matchNumber = 1;
+
+    const ST = { IDLE:0, BLOCKING:1, COUNTERING:2, ATTACKING:3, RECOVERING:4, CHASING:5 };
+    let npcState = ST.IDLE, npcStateTimer = 0, npcNextAtk = 60, npcNextMove = null;
+    let npcPredicted = null, playerAnim = false, npcAnim = false;
+
+    function updateScoreDisplay() {
+        document.getElementById('score-player').innerText = playerWins;
+        document.getElementById('score-npc').innerText = npcWins;
+        document.getElementById('round-info').innerText = `Round ${currentRound} of ${TOTAL_ROUNDS}`;
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    //  UI
+    // ═══════════════════════════════════════════════════════════════
+    function updateHP() {
+        document.getElementById('player-hp').style.width = Math.max(0,playerHP/MAX_HP*100)+'%';
+        document.getElementById('npc-hp').style.width = Math.max(0,npcHP/MAX_HP*100)+'%';
+    }
+    function updateBrain() {
+        document.getElementById('pattern-reasoning').innerText = patternEngine.getReasoning();
+        const c = Math.round(patternEngine.confidence*100);
+        document.getElementById('confidence-label').innerText = `Confidence: ${c}%`;
+        document.getElementById('confidence-bar').style.width = c+'%';
+        document.getElementById('timing-info').innerText = patternEngine.getTimingInfo();
+        document.getElementById('memory-info').innerText =
+            `💾 Memory: ${patternEngine.totalLifetimeMoves} moves (persistent)`;
+    }
+    function showHit(text, color) {
+        const el = document.getElementById('hit-splash');
+        el.innerText = text; el.style.color = color; el.style.opacity = 1;
+        setTimeout(()=>el.style.opacity=0, 400);
+    }
+    function showPersonaSplash(text, color) {
+        const el = document.getElementById('persona-splash');
+        el.innerText = text; el.style.color = color; el.style.opacity = 1;
+        el.style.transform = 'translate(-50%,-50%) scale(1.1)';
+        setTimeout(()=>{ el.style.opacity=0; el.style.transform='translate(-50%,-50%) scale(1)'; }, 1200);
+    }
+    function setStatus(t) { document.getElementById('ai-status').innerText = t; }
+
+    // ── Round transition ──
+    function showRoundResult(playerWonRound) {
+        roundOver = true;
+        const overlay = document.getElementById('round-overlay');
+        const resultEl = document.getElementById('round-result-text');
+        const nextEl = document.getElementById('round-next-text');
+
+        if (playerWonRound) {
+            playerWins++;
+            resultEl.innerText = '🏆 ROUND WON';
+            resultEl.style.color = '#00ff88';
+        } else {
+            npcWins++;
+            resultEl.innerText = '💀 ROUND LOST';
+            resultEl.style.color = '#ff3344';
+        }
+        updateScoreDisplay();
+
+        // Check if match is over (best of 3)
+        if (playerWins >= 2 || npcWins >= 2) {
+            nextEl.innerText = '';
+            overlay.style.display = 'flex';
+            setTimeout(() => {
+                overlay.style.display = 'none';
+                showMatchOver();
+            }, 1500);
+        } else {
+            nextEl.innerText = `Round ${currentRound + 1} starting...`;
+            overlay.style.display = 'flex';
+            setTimeout(() => {
+                overlay.style.display = 'none';
+                startNextRound();
+            }, 2000);
+        }
+    }
+
+    function startNextRound() {
+        currentRound++;
+        playerHP = MAX_HP; npcHP = MAX_HP;
+        roundOver = false; gameOver = false;
+        playerAnim = false; npcAnim = false;
+        npcState = ST.IDLE; npcStateTimer = 0; npcNextAtk = 60; npcNextMove = null;
+        npcPredicted = patternEngine.predict(); // Use learned data!
+        updateHP(); updateScoreDisplay(); updateBrain();
+        setStatus(`Round ${currentRound} — NPC remembers ${patternEngine.history.length} moves`);
+        player.group.position.set(-3, 0, 0);
+        npc.group.position.set(3, 0, 0);
+    }
+
+    function showMatchOver() {
+        gameOver = true;
+        const won = playerWins >= 2;
+        document.getElementById('game-over').style.display = 'flex';
+        document.getElementById('go-title').innerText = won ? '🏆 MATCH WON!' : '💀 MATCH LOST';
+        document.getElementById('go-title').style.color = won ? '#00ff88' : '#ff3344';
+        const p = PERSONAS[activePersonaKey];
+        const n = patternEngine.history.length;
+        document.getElementById('go-subtitle').innerText =
+            `Score: ${playerWins} — ${npcWins} · Final persona: ${p.icon} ${p.name}\n` +
+            `Rhythm consistency: ${Math.round(patternEngine.rhythmConsistency*100)}%`;
+            
+        // Populate Analysis
+        const movesEl = document.getElementById('go-moves');
+        const recentMoves = patternEngine.history.slice(-15).join(', ');
+        movesEl.innerHTML = `<b>Recent sequence:</b> <span class="go-log-moves">${recentMoves || 'None'}</span><br><br><b>Markov Fallback Assessment:</b> ${patternEngine.getReasoning()}`;
+        
+        const logEl = document.getElementById('go-log');
+        if (gemmaLog.length === 0) {
+            logEl.innerText = "No Gemma API responses received this match.";
+        } else {
+            // Show all gemma decisions
+            logEl.innerHTML = gemmaLog.map(l => 
+                `<div class="go-log-entry">
+                    <b>Time:</b> ${l.time}<br>
+                    <b>User Pattern:</b> <span class="go-log-moves">${l.sequence}</span><br>
+                    <b>Counter:</b> <span class="go-log-ai">${l.move}</span> → <b>Shifted to:</b> ${l.icon} ${l.persona}<br>
+                    <b>Reasoning:</b> ${l.reasoning || 'Pattern identified'}
+                </div>`
+            ).join('');
+        }
+    }
+
+    function resetMatch() {
+        currentRound = 1; playerWins = 0; npcWins = 0;
+        playerHP = MAX_HP; npcHP = MAX_HP;
+        gameOver = false; roundOver = false;
+        playerAnim = false; npcAnim = false;
+        npcState = ST.IDLE; npcStateTimer = 0; npcNextAtk = 60; npcNextMove = null;
+        npcPredicted = patternEngine.predict();
+        matchNumber++;
+        activePersonaKey = 'balanced';
+        gemmaLog.length = 0;
+        gemmaCount = 0;
+        // Pattern engine persists!
+        updateHP(); updateScoreDisplay(); updateBrain();
+        setStatus(`Match ${matchNumber} — NPC has ${patternEngine.history.length} moves in memory`);
+        document.getElementById('game-over').style.display = 'none';
+        const badge = document.getElementById('persona-badge');
+        badge.innerText = '⚖️ BALANCED'; badge.style.color = '#ffa500'; badge.style.borderColor = '#ffa500';
+        player.group.position.set(-3, 0, 0);
+        npc.group.position.set(3, 0, 0);
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    //  THREE.JS
+    // ═══════════════════════════════════════════════════════════════
+    document.getElementById('overlay').addEventListener('click', function() { this.style.display='none'; window.focus(); });
+    addEventListener('click', ()=>window.focus());
+
+    const scene = new THREE.Scene(); scene.fog = new THREE.Fog(0x0a0a12, 8, 35);
+    const camera = new THREE.PerspectiveCamera(45, innerWidth/innerHeight, 0.1, 100);
+    camera.position.set(0, 6, 15); camera.lookAt(0, 2, 0);
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(innerWidth, innerHeight); renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+    renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    document.body.appendChild(renderer.domElement);
+
+    scene.add(new THREE.AmbientLight(0x221133, 0.4));
+    const bL = new THREE.PointLight(0x00aaff,1.5,20); bL.position.set(-5,6,3); scene.add(bL);
+    const rL = new THREE.PointLight(0xff3344,1.5,20); rL.position.set(5,6,3); scene.add(rL);
+    const sL = new THREE.SpotLight(0xffffff,0.6); sL.position.set(0,12,5); sL.castShadow=true; sL.shadow.mapSize.set(1024,1024); scene.add(sL);
+
+    const gnd = new THREE.Mesh(new THREE.PlaneGeometry(60,60), new THREE.MeshStandardMaterial({color:0x111122,roughness:0.9}));
+    gnd.rotation.x=-Math.PI/2; gnd.receiveShadow=true; scene.add(gnd);
+    const gr = new THREE.GridHelper(60,30,0x1a1a3e,0x0d0d1e); gr.position.y=0.01; scene.add(gr);
+
+    const particles = [];
+    function spawnParticles(pos, color, count) {
+        for (let i = 0; i < count; i++) {
+            const mesh = new THREE.Mesh(
+                new THREE.BoxGeometry(0.1, 0.1, 0.1),
+                new THREE.MeshBasicMaterial({color: color, emissive: color})
+            );
+            mesh.position.copy(pos);
+            const vx = (Math.random() - 0.5) * 0.8;
+            const vy = Math.random() * 0.5 + 0.2;
+            const vz = (Math.random() - 0.5) * 0.8;
+            scene.add(mesh);
+            particles.push({ mesh, vx, vy, vz, life: 1.0 });
+        }
+    }
+    function updateParticles() {
+        for (let i = particles.length - 1; i >= 0; i--) {
+            const p = particles[i];
+            p.mesh.position.x += p.vx;
+            p.mesh.position.y += p.vy;
+            p.mesh.position.z += p.vz;
+            p.vy -= 0.02; // gravity
+            p.life -= 0.03;
+            p.mesh.material.opacity = p.life;
+            p.mesh.material.transparent = true;
+            p.mesh.scale.setScalar(Math.max(0.01, p.life));
+            if (p.life <= 0) {
+                scene.remove(p.mesh);
+                particles.splice(i, 1);
+            }
+        }
+    }
+
+    const trails = [];
+    function spawnTrail(pos, color) {
+        const mesh = new THREE.Mesh(
+            new THREE.BoxGeometry(0.2, 0.2, 0.2),
+            new THREE.MeshBasicMaterial({color: color, transparent: true, opacity: 0.8, emissive: color})
+        );
+        mesh.position.copy(pos);
+        scene.add(mesh);
+        trails.push({ mesh, life: 1.0 });
+    }
+    function updateTrails() {
+        for (let i = trails.length - 1; i >= 0; i--) {
+            const t = trails[i];
+            t.life -= 0.08;
+            t.mesh.material.opacity = t.life;
+            t.mesh.scale.setScalar(Math.max(0.01, t.life));
+            if (t.life <= 0) {
+                scene.remove(t.mesh);
+                trails.splice(i, 1);
+            }
+        }
+    }
+
+    function mkCapsule(parent, m, radius, length, x, y, z, rx, ry, rz) {
+        const pivot = new THREE.Group();
+        pivot.position.set(x, y, z);
+        pivot.rotation.set(rx, ry, rz);
+        const mesh = new THREE.Mesh(new THREE.CapsuleGeometry(radius, length, 4, 16), m);
+        mesh.position.y = -(length / 2 + radius);
+        mesh.castShadow = true;
+        pivot.add(mesh);
+        
+        const jointMat = new THREE.MeshBasicMaterial({color: 0xffffff, emissive: 0xffffff});
+        const joint = new THREE.Mesh(new THREE.SphereGeometry(radius * 1.1, 16, 16), jointMat);
+        pivot.add(joint);
+        
+        parent.add(pivot);
+        return { pivot, mesh, jointMat };
+    }
+
+    function lerp(a, b, t) { return a + (b - a) * t; }
+    function ease(t) {
+        if (t < 0.2) return -t * 2; // windup to -0.4
+        if (t < 0.5) return (t - 0.2) / 0.3 * 1.4 - 0.4; // snap to 1.0
+        return 1.0 - (t - 0.5) / 0.5; // recover to 0.0
+    }
+
+    function mkFighter(c, em, x) {
+        const g = new THREE.Group();
+        const m = new THREE.MeshStandardMaterial({color:c,roughness:0.2,metalness:0.8,emissive:em,emissiveIntensity:0.5});
+
+        const torsoPivot = new THREE.Group();
+        torsoPivot.position.set(0, 1.3, 0); 
+        g.add(torsoPivot);
+
+        const bd = new THREE.Mesh(new THREE.BoxGeometry(0.7, 1.2, 0.4), m); 
+        bd.position.y = 0.6; bd.castShadow=true; 
+        torsoPivot.add(bd);
+
+        const hdGroup = new THREE.Group();
+        hdGroup.position.set(0, 1.5, 0);
+        const hd = new THREE.Mesh(new THREE.CapsuleGeometry(0.25, 0.2, 4, 16), m); 
+        hd.rotation.z = Math.PI / 2;
+        hd.castShadow = true;
+        hdGroup.add(hd);
+        const visor = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.15, 0.45), new THREE.MeshBasicMaterial({color: 0x00ffff}));
+        visor.position.set(0, 0, 0.05);
+        hdGroup.add(visor);
+        torsoPivot.add(hdGroup);
+
+        const armL = mkCapsule(torsoPivot, m.clone(), 0.12, 0.5, -0.45, 1.1, 0, 0, 0, 0.3);
+        const foreL = mkCapsule(armL.pivot, m.clone(), 0.1, 0.5, 0, -0.7, 0, -0.1, 0, 0);
+
+        const armR = mkCapsule(torsoPivot, m.clone(), 0.12, 0.5, 0.45, 1.1, 0, 0, 0, -0.3);
+        const foreR = mkCapsule(armR.pivot, m.clone(), 0.1, 0.5, 0, -0.7, 0, -0.1, 0, 0);
+
+        const thighL = mkCapsule(torsoPivot, m.clone(), 0.15, 0.6, -0.2, 0, 0, 0, 0, 0);
+        const calfL = mkCapsule(thighL.pivot, m.clone(), 0.12, 0.6, 0, -0.8, 0, 0, 0, 0);
+
+        const thighR = mkCapsule(torsoPivot, m.clone(), 0.15, 0.6, 0.2, 0, 0, 0, 0, 0);
+        const calfR = mkCapsule(thighR.pivot, m.clone(), 0.12, 0.6, 0, -0.8, 0, 0, 0, 0);
+
+        g.position.set(x,0,0); scene.add(g);
+
+        function resetPose() {
+            torsoPivot.position.set(0, 1.3, 0);
+            torsoPivot.rotation.set(0, 0, 0);
+            armL.pivot.rotation.set(0.5, 0, 0.4); foreL.pivot.rotation.set(-1.2, 0, 0);
+            armR.pivot.rotation.set(0.6, 0, -0.4); foreR.pivot.rotation.set(-1.4, 0, 0);
+            thighL.pivot.rotation.set(-0.2, 0, 0.1); calfL.pivot.rotation.set(0.2, 0, 0);
+            thighR.pivot.rotation.set(0.2, 0, -0.1); calfR.pivot.rotation.set(0.1, 0, 0);
+        }
+        resetPose();
+
+        return {
+            group:g, color:c, emissive:em, material:m,
+            torso: torsoPivot, head: hdGroup,
+            armL: armL.pivot, foreL: foreL.pivot,
+            armR: armR.pivot, foreR: foreR.pivot,
+            legL: thighL.pivot, calfL: calfL.pivot,
+            legR: thighR.pivot, calfR: calfR.pivot,
+            resetPose
+        };
+    }
+    const player = mkFighter(0x00aaff,0x003366,-3);
+    const npc = mkFighter(0xff3344,0x661111,3);
+
+    const shieldMat = new THREE.MeshBasicMaterial({color:0xffaa00,transparent:true,opacity:0,wireframe:true});
+    const shieldMesh = new THREE.Mesh(new THREE.SphereGeometry(1.2,16,16),shieldMat);
+    shieldMesh.position.y=1.8; npc.group.add(shieldMesh);
+
+    // ═══════════════════════════════════════════════════════════════
+    //  INPUT + COMBAT
+    // ═══════════════════════════════════════════════════════════════
+    const keys={w:0,a:0,s:0,d:0,arrowup:0,arrowdown:0,arrowleft:0,arrowright:0};
+    addEventListener('keydown',e=>{const k=e.key.toLowerCase();if(k in keys)keys[k]=1;else handleKey(k);});
+    addEventListener('keyup',e=>{const k=e.key.toLowerCase();if(k in keys)keys[k]=0;});
+
+    function handleKey(k) {
+        if (gameOver||roundOver||playerAnim) return;
+        const map={j:'jab',l:'cross',k:'low_kick',i:'roundhouse',u:'uppercut'};
+        if (map[k]) doAttack(player,map[k],npc,true);
+    }
+
+    function doAttack(atk,move,tgt,isP) {
+        if(isP)playerAnim=true;else npcAnim=true;
+        const orig=atk.group.position.clone();
+        const dist=atk.group.position.distanceTo(tgt.group.position);
+        const dir=tgt.group.position.clone().sub(atk.group.position);dir.y=0;dir.normalize();
+        let t=0;const dur=28;
+        const origRotY = atk.group.rotation.y;
+        const trailColor = isP ? 0x00ffff : 0xff3344;
+
+        (function an(){
+            t++;
+            const push = ease(t/dur); 
+            // Only move forward during strike phase
+            if (t/dur >= 0.2 && t/dur <= 0.5) {
+                atk.group.position.copy(orig).add(dir.clone().multiplyScalar(4.0 * push));
+            } else if (t/dur > 0.5) {
+                // Recovery slide back
+                atk.group.position.copy(orig).add(dir.clone().multiplyScalar(4.0 * push));
+            }
+
+            atk.resetPose();
+
+            const fistPos = new THREE.Vector3();
+            let trailSpawned = false;
+
+            if (move === 'jab') {
+                const arm = isP ? atk.armR : atk.armL;
+                const fore = isP ? atk.foreR : atk.foreL;
+                arm.rotation.set(lerp(arm.rotation.x, -1.5, push), 0, lerp(arm.rotation.z, isP?-0.1:0.1, push));
+                fore.rotation.set(lerp(fore.rotation.x, -0.1, push), 0, 0);
+                atk.torso.rotation.y = push * 0.4 * (isP?-1:1);
+                if (push > 0) { fore.children[0].getWorldPosition(fistPos); trailSpawned = true; }
+            } 
+            else if (move === 'cross') {
+                const arm = isP ? atk.armL : atk.armR;
+                const fore = isP ? atk.foreL : atk.foreR;
+                arm.rotation.set(lerp(arm.rotation.x, -1.6, push), 0, lerp(arm.rotation.z, isP?0.1:-0.1, push));
+                fore.rotation.set(lerp(fore.rotation.x, -0.1, push), 0, 0);
+                atk.torso.rotation.y = push * 1.0 * (isP?-1:1);
+                if (push > 0) { fore.children[0].getWorldPosition(fistPos); trailSpawned = true; }
+            }
+            else if (move === 'uppercut') {
+                const arm = isP ? atk.armR : atk.armL;
+                const fore = isP ? atk.foreR : atk.foreL;
+                arm.rotation.set(lerp(arm.rotation.x, -2.5, push), 0, 0);
+                fore.rotation.set(lerp(fore.rotation.x, -1.0, push), 0, 0);
+                atk.torso.position.y = lerp(1.3, 2.0, push);
+                atk.torso.rotation.x = push * -0.2;
+                atk.legL.rotation.x = push * -0.5; atk.calfL.rotation.x = push * 0.5;
+                atk.legR.rotation.x = push * -0.5; atk.calfR.rotation.x = push * 0.5;
+                if (push > 0) { fore.children[0].getWorldPosition(fistPos); trailSpawned = true; }
+            }
+            else if (move === 'low_kick') {
+                const leg = isP ? atk.legR : atk.legL;
+                const calf = isP ? atk.calfR : atk.calfL;
+                atk.torso.rotation.x = push * -0.3;
+                leg.rotation.set(lerp(leg.rotation.x, -1.5, push), 0, lerp(leg.rotation.z, isP?0.5:-0.5, push));
+                calf.rotation.set(lerp(calf.rotation.x, 0.2, push), 0, 0);
+                atk.torso.rotation.y = push * 0.6 * (isP?-1:1);
+                if (push > 0) { calf.children[0].getWorldPosition(fistPos); trailSpawned = true; }
+            }
+            else if (move === 'roundhouse') {
+                const leg = isP ? atk.legL : atk.legR;
+                const calf = isP ? atk.calfL : atk.calfR;
+                atk.group.rotation.y = origRotY + push * Math.PI * 2 * (isP?-1:1);
+                atk.torso.position.y = lerp(1.3, 1.8, push);
+                atk.torso.rotation.x = push * -0.5;
+                leg.rotation.set(lerp(leg.rotation.x, -1.5, push), lerp(leg.rotation.y, isP?-0.5:0.5, push), lerp(leg.rotation.z, isP?-1.2:1.2, push));
+                calf.rotation.set(lerp(calf.rotation.x, 0, push), 0, 0);
+                if (push > 0) { calf.children[0].getWorldPosition(fistPos); trailSpawned = true; }
+            }
+
+            if (trailSpawned && t/dur >= 0.2 && t/dur <= 0.6) spawnTrail(fistPos, trailColor);
+
+            if(t===Math.floor(dur*0.4)&&dist<6.0){if(isP)onPHit(move);else onNHit(move);}
+            else if(t===Math.floor(dur*0.4)&&isP&&dist>=6.0){setStatus('Miss! Get closer.');setTimeout(()=>setStatus(''),800);}
+
+            if(t>=dur){
+                atk.group.position.copy(orig);
+                atk.group.rotation.y = origRotY;
+                atk.resetPose();
+                if(isP)playerAnim=false;else npcAnim=false;
+            }else requestAnimationFrame(an);
+        })();
+    }
+
+    function onPHit(move) {
+        patternEngine.record(move);
+        callGemma(patternEngine.history.slice(-5).join(', '));
+
+        const p=getP(),pred=npcPredicted===move,blk=npcState===ST.BLOCKING;
+        let dmg=DAMAGE[move]||8;
+
+        if(pred&&blk){
+            dmg=Math.floor(dmg*0.15);
+            showHit(`${p.icon} BLOCKED! -${dmg}`,p.badgeColor);
+            setStatus(`${p.name}: Predicted ${move} → BLOCKED!`);
+            npcState=ST.COUNTERING;npcStateTimer=p.counterDelayBase-6;
+        }else if(blk){
+            dmg=Math.floor(dmg*0.45);
+            showHit(`Partial block -${dmg}`,'#ffcc00');
+            setStatus(`${p.name}: Expected ${npcPredicted}`);
+            npcState=ST.COUNTERING;npcStateTimer=p.counterDelayBase;
+        }else{
+            showHit(`${move.toUpperCase()} -${dmg}`,'#00ff88');
+            setStatus(`Hit! ${move}`);
+            npcState=ST.COUNTERING;npcStateTimer=p.counterDelayBase+4;
+            spawnParticles(npc.group.position.clone().add(new THREE.Vector3(0, 1.5, 0)), 0xffaa00, 25);
+            screenShake = 0.6;
+        }
+
+        npcHP-=dmg;
+        npc.material.emissive.setHex(0xffffff);
+        setTimeout(()=>npc.material.emissive.setHex(npc.emissive),150);
+        updateHP();updateBrain();
+        npcPredicted=patternEngine.predict();
+        if(npcHP<=0){npcHP=0;updateHP();showRoundResult(true);}
+    }
+
+    function onNHit(move) {
+        const p=getP();
+        const dmg=Math.floor((DAMAGE[move]||8)*p.dmgMul);
+        playerHP-=dmg;
+        player.material.emissive.setHex(0xffffff);
+        setTimeout(()=>player.material.emissive.setHex(player.emissive),150);
+        showHit(`${p.icon} ${move.toUpperCase()} -${dmg}`,'#ff3344');
+        setStatus(`${p.name} counters: ${move}!`);
+        updateHP();
+        spawnParticles(player.group.position.clone().add(new THREE.Vector3(0, 1.5, 0)), 0xff3344, 25);
+        screenShake = 0.6;
+        if(playerHP<=0){playerHP=0;updateHP();showRoundResult(false);}
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    //  NPC BEHAVIOR
+    // ═══════════════════════════════════════════════════════════════
+    function updateNPC() {
+        if(gameOver||roundOver||npcAnim) return;
+        npcStateTimer--;npcNextAtk--;
+        const p=getP();
+
+        if(npcState===ST.IDLE&&patternEngine.isAttackImminent()){
+            npcPredicted=patternEngine.predict();
+            npcState=ST.BLOCKING;npcStateTimer=30;
+        }
+
+        switch(npcState){
+            case ST.IDLE:
+                shieldMat.opacity=0;
+                if(patternEngine.confidence>0.1&&Math.random()<p.blockChance*0.3){
+                    npcPredicted=patternEngine.predict();
+                    npcState=ST.BLOCKING;npcStateTimer=30+Math.floor(Math.random()*20);
+                }
+                if(npcNextAtk<=0){npcState=ST.CHASING; npcNextMove=pickMove();}
+                break;
+            case ST.BLOCKING:
+                shieldMat.opacity=0.1+p.blockChance*0.25;
+                if(npcStateTimer<=0){shieldMat.opacity=0;npcState=ST.IDLE;npcNextAtk=p.atkMin+Math.floor(Math.random()*(p.atkMax-p.atkMin));}
+                break;
+            case ST.COUNTERING:
+                shieldMat.opacity=0;
+                if(npcStateTimer<=0){npcState=ST.CHASING; npcNextMove=pickMove();}
+                break;
+            case ST.CHASING:
+                shieldMat.opacity=0;
+                const d = npc.group.position.distanceTo(player.group.position);
+                if (d > 3.5) {
+                    const dir = player.group.position.clone().sub(npc.group.position).normalize();
+                    npc.group.position.add(dir.multiplyScalar(0.18)); // Chase speed
+                } else {
+                    npcState = ST.ATTACKING;
+                }
+                break;
+            case ST.ATTACKING:
+                shieldMat.opacity=0;
+                doAttack(npc,npcNextMove,player,false);
+                npcState=ST.RECOVERING;npcStateTimer=30;
+                npcNextAtk=p.atkMin+Math.floor(Math.random()*(p.atkMax-p.atkMin));
+                break;
+            case ST.RECOVERING:
+                shieldMat.opacity=0;
+                if(npcStateTimer<=0){npcState=ST.IDLE;npcNextAtk=Math.floor(p.atkMin*0.5+Math.random()*p.atkMin*0.5);}
+                break;
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    //  RENDER
+    // ═══════════════════════════════════════════════════════════════
+    const spd=0.15;
+    let screenShake = 0;
+    function animate(){
+        requestAnimationFrame(animate);
+        if(gameOver){renderer.render(scene,camera);return;}
+        time+=0.05;
+        if(!roundOver)updateNPC();
+        
+        updateParticles();
+        updateTrails();
+
+        let isPlayerMoving = false;
+        if(!playerAnim&&!roundOver){
+            if(keys.w||keys.arrowup){ player.group.position.z-=spd; isPlayerMoving=true; }
+            if(keys.s||keys.arrowdown){ player.group.position.z+=spd; isPlayerMoving=true; }
+            if(keys.a||keys.arrowleft){ player.group.position.x-=spd; isPlayerMoving=true; }
+            if(keys.d||keys.arrowright){ player.group.position.x+=spd; isPlayerMoving=true; }
+            player.group.position.x=Math.max(-18,Math.min(18,player.group.position.x));
+            player.group.position.z=Math.max(-18,Math.min(18,player.group.position.z));
+        }
+
+        function applyWalkCycle(atk, moving, speedMult) {
+            if (moving) {
+                const cycle = Math.sin(time * speedMult);
+                atk.legL.rotation.x = -0.2 + cycle * 0.6;
+                atk.legR.rotation.x = 0.2 - cycle * 0.6;
+                atk.calfL.rotation.x = cycle > 0 ? 0.2 : cycle * -0.5;
+                atk.calfR.rotation.x = cycle < 0 ? 0.2 : cycle * 0.5;
+                atk.torso.position.y = 1.3 + Math.abs(Math.cos(time * speedMult)) * 0.1;
+                atk.armL.rotation.x = 0.5 - cycle * 0.3;
+                atk.armR.rotation.x = 0.6 + cycle * 0.3;
+                atk.torso.rotation.z = Math.sin(time * speedMult * 0.5) * 0.05;
+            } else { // Idle breathing
+                atk.torso.position.y = 1.3 + Math.sin(time * 3) * 0.03;
+                atk.armL.rotation.x = 0.5 + Math.sin(time * 3) * 0.05;
+                atk.armR.rotation.x = 0.6 + Math.sin(time * 3) * 0.05;
+                atk.legL.rotation.x = -0.2; atk.legR.rotation.x = 0.2;
+                atk.calfL.rotation.x = 0.2; atk.calfR.rotation.x = 0.1;
+                atk.torso.rotation.z = 0;
+            }
+        }
+
+        if(!playerAnim) applyWalkCycle(player, isPlayerMoving, 8);
+        if(!npcAnim) applyWalkCycle(npc, npcState === ST.CHASING, 8);
+
+        if(!npcAnim){
+            const r=Math.atan2(player.group.position.x-npc.group.position.x,player.group.position.z-npc.group.position.z);
+            npc.group.rotation.y+=(r-npc.group.rotation.y)*0.1;
+        }
+        if(!playerAnim){
+            const r=Math.atan2(npc.group.position.x-player.group.position.x,npc.group.position.z-player.group.position.z);
+            player.group.rotation.y+=(r-player.group.rotation.y)*0.1;
+        }
+
+        bL.intensity=1.2+Math.sin(time*3)*0.3;
+        rL.intensity=1.2+Math.sin(time*3+1)*0.3;
+        if(npcState===ST.BLOCKING){shieldMesh.rotation.y+=0.03;shieldMesh.rotation.x+=0.02;}
+
+        const cx=(player.group.position.x+npc.group.position.x)*0.3;
+        camera.position.x+=(cx-camera.position.x)*0.04;
+        camera.position.z+=(player.group.position.z+10-camera.position.z)*0.04;
+        
+        if (screenShake > 0) {
+            camera.position.x += (Math.random() - 0.5) * screenShake;
+            camera.position.y += (Math.random() - 0.5) * screenShake;
+            camera.position.z += (Math.random() - 0.5) * screenShake;
+            screenShake *= 0.85;
+            if (screenShake < 0.05) screenShake = 0;
+        }
+        
+        camera.lookAt(cx,2,(player.group.position.z+npc.group.position.z)*0.3);
+        renderer.render(scene,camera);
+    }
+    animate();
+    updateScoreDisplay();
+
+    document.getElementById('go-restart').addEventListener('click', resetMatch);
+    addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight);});
+    </script>
+</body>
+</html>
