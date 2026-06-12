@@ -2,6 +2,7 @@ import gradio as gr
 import os
 import base64
 import json
+import html as html_module
 import torch
 try:
     import spaces
@@ -19,7 +20,6 @@ try:
 except ImportError:
     HAS_ML = False
 
-# Configuration
 BASE_MODEL = "google/gemma-3-4b-it"
 ADAPTER_MODEL = "Sathvik0101/gemma-3-combat-npc-adapter"
 
@@ -48,16 +48,16 @@ if HAS_ML:
     try:
         tokenizer = AutoTokenizer.from_pretrained(BASE_MODEL, token=hf_token)
         base_model = AutoModelForCausalLM.from_pretrained(
-            BASE_MODEL, 
-            token=hf_token, 
+            BASE_MODEL,
+            token=hf_token,
             torch_dtype=torch.bfloat16
         )
-        
+
         print("Loading adapter via snapshot_download...")
         from huggingface_hub import snapshot_download
         adapter_path = snapshot_download(
-            repo_id=ADAPTER_MODEL, 
-            allow_patterns="checkpoint-375/*", 
+            repo_id=ADAPTER_MODEL,
+            allow_patterns="checkpoint-375/*",
             token=hf_token
         )
         local_adapter_dir = os.path.join(adapter_path, "checkpoint-375")
@@ -97,7 +97,7 @@ def run_gemma(moves_sequence):
     )
 
     inputs = tokenizer(prompt, return_tensors="pt").to(model.device)
-    
+
     with torch.no_grad():
         outputs = model.generate(
             **inputs,
@@ -106,9 +106,9 @@ def run_gemma(moves_sequence):
             do_sample=True,
             pad_token_id=tokenizer.eos_token_id
         )
-        
+
     text = tokenizer.decode(outputs[0][inputs["input_ids"].shape[-1]:], skip_special_tokens=True)
-    
+
     reasoning = "Unable to process reasoning."
     counter_move = "jab"
 
@@ -121,25 +121,26 @@ def run_gemma(moves_sequence):
 
     return json.dumps({"reasoning": reasoning, "counterMove": counter_move, "sequence": moves_sequence})
 
-# Read HTML path
-html_path = os.path.join(os.path.dirname(__file__), "3d_scene.html")
-# Ensure linux-style paths for Gradio /file= endpoint
-html_url_path = html_path.replace("\\", "/")
+html_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "3d_scene.html")
+with open(html_path, "r", encoding="utf-8") as f:
+    game_html = f.read()
+
+game_html_escaped = html_module.escape(game_html, quote=True)
 
 iframe_html = (
     f'<iframe id="game-iframe" '
-    f'src="/file={html_url_path}" '
-    f'style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; border: none; z-index: 9999;">'
+    f'srcdoc="{game_html_escaped}" '
+    f'style="position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; border: none; z-index: 9999;">'
     f'</iframe>'
 )
 
 custom_css = """
-body, html { margin: 0 !important; padding: 0 !important; overflow: hidden !important; }
-.gradio-container { padding: 0 !important; margin: 0 !important; max-width: 100% !important; border: none !important; }
+body, html { margin: 0 !important; padding: 0 !important; overflow: hidden !important; height: 100% !important; }
+.gradio-container { padding: 0 !important; margin: 0 !important; max-width: 100% !important; border: none !important; height: 100% !important; }
 footer { display: none !important; }
+.bridge-hidden { position: absolute !important; left: -9999px !important; opacity: 0 !important; height: 0 !important; overflow: hidden !important; pointer-events: none !important; }
 """
 
-# The script links the iframe messages with Gradio hidden components
 listener_script = """
 <script>
 window.addEventListener("message", function(e) {
@@ -148,12 +149,10 @@ window.addEventListener("message", function(e) {
         if (input_box) {
             input_box.value = e.data.sequence;
             input_box.dispatchEvent(new Event('input', { bubbles: true }));
-            
             setTimeout(() => {
                 const btn = document.querySelector("#hidden_btn button");
-                if (btn) {
-                    btn.click();
-                } else {
+                if (btn) btn.click();
+                else {
                     const wrapper = document.querySelector("#hidden_btn");
                     if (wrapper) wrapper.click();
                 }
@@ -186,29 +185,27 @@ function handleAIResponse(responseStr) {
 
 with gr.Blocks(css=custom_css, head=listener_script) as demo:
     gr.HTML(iframe_html)
-    
-    # Hidden components for bridging iframe -> Gradio -> ZeroGPU
-    with gr.Row(visible=False):
+
+    with gr.Row(elem_classes=["bridge-hidden"]):
         hidden_input = gr.Textbox(elem_id="hidden_input")
         hidden_output = gr.Textbox(elem_id="hidden_output")
         hidden_btn = gr.Button(elem_id="hidden_btn")
-        
+
         hidden_btn.click(
             fn=run_gemma,
             inputs=hidden_input,
             outputs=hidden_output
         )
-        
+
         hidden_output.change(
             fn=None,
             inputs=[hidden_output],
-            js="(val) => { handleAIResponse(val); return val; }"
+            js="(val) => { handleAIResponse(val); return []; }"
         )
 
 if __name__ == "__main__":
     demo.launch(
-        server_name="0.0.0.0", 
-        server_port=int(os.environ.get("PORT", 7860)), 
-        allowed_paths=[os.path.dirname(__file__)],
-        ssr=False
+        server_name="0.0.0.0",
+        server_port=int(os.environ.get("PORT", 7860)),
+        allowed_paths=[os.path.dirname(os.path.abspath(__file__))],
     )
