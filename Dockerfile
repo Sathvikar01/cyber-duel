@@ -9,6 +9,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy app files
 COPY app.py .
 COPY 3d_scene.html .
+COPY three.min.js .
 
 # HF Spaces requires port 7860
 EXPOSE 7860

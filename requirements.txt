@@ -1,8 +1,6 @@
 fastapi
 uvicorn
-gradio>=4.0.0
 huggingface_hub
-spaces
 transformers
 torch
 peft
