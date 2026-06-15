@@ -324,7 +324,7 @@ function App() {
               key={gameKey}
               shadows
               camera={{ position: [0, 4, 12], fov: 50 }}
-              gl={{ antialias: true, alpha: false, powerPreference: 'high-performance' }}
+              gl={{ antialias: true, alpha: false, powerPreference: 'high-performance', preserveDrawingBuffer: true }}
               dpr={[1, 2]}
               frameloop="always"
             >
@@ -466,7 +466,7 @@ function PausedCanvas({ arena, characters }) {
       <Canvas
         shadows={false}
         camera={{ position: [0, 4, 12], fov: 50 }}
-        gl={{ antialias: true, alpha: false, powerPreference: 'low-power' }}
+        gl={{ antialias: true, alpha: false, powerPreference: 'low-power', preserveDrawingBuffer: true }}
         dpr={1}
         frameloop="never"
       >

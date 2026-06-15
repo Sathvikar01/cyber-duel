@@ -159,23 +159,33 @@ export default function GLBFighter({
     const figId = (character && character.fighterId) || 'ronin';
     applyBoneScales(root, figId);
 
-    // 5. Apply per-character material tints (override the GLB's defaults
-    //    with our fighter accent color so character select still has
-    //    visible variety).
+    // 5. REPLACE materials entirely with MeshLambertMaterial. The GLB
+    //    ships with MeshStandardMaterial (PBR) which needs proper
+    //    lighting + environment maps to render visibly. The arena's
+    //    point lights don't reach the characters with enough intensity,
+    //    so the PBR materials were rendering as near-black (verified
+    //    via headless pixel sampling: center pixel was (58,0,0)).
+    //    MeshLambertMaterial has both color and emissive, responds
+    //    to basic light, and renders bright even with minimal lighting.
+    //    We preserve the GLB's textures and the character's accent
+    //    color as a strong emissive tint so each fighter reads as
+    //    Ronin (red), Monk (green), etc.
     cloned.traverse((obj) => {
       if (!obj.isMesh) return;
-      if (!obj.material) return;
       const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
-      mats.forEach((m) => {
-        if (!m) return;
-        if (m.color && character && character.bodyColor) {
-          m.color = new THREE.Color(character.bodyColor);
-        }
-        if (m.emissive && character && character.accentColor) {
-          m.emissive = new THREE.Color(character.accentColor);
-          m.emissiveIntensity = 0.18;
-        }
+      const newMats = mats.map((m) => {
+        if (!m) return m;
+        const tex = m.map || null;
+        return new THREE.MeshLambertMaterial({
+          color: 0xcccccc,
+          map: tex,
+          emissive: character && character.accentColor
+            ? new THREE.Color(character.accentColor)
+            : new THREE.Color(0x444444),
+          emissiveIntensity: 1.2,
+        });
       });
+      obj.material = newMats.length === 1 ? newMats[0] : newMats;
     });
 
     // 6. For the opponent (evil mech), override with a darker / redder
@@ -222,14 +232,17 @@ export default function GLBFighter({
         dt
       );
 
-      // 5. Hit flash: brighten the whole rig briefly.
-      const hitFlash = s.isHit ? 1.5 : 0.18;
+      // 5. Hit flash: brighten the whole rig briefly. Baseline 1.2
+      //    (matching the rest-pose tint above) so the accent emissive
+      //    keeps the character clearly visible against the dark arena
+      //    between hits. Flash bumps to 3.5 on hit.
+      const hitFlash = s.isHit ? 3.5 : 1.2;
       cloned.traverse((obj) => {
         if (!obj.isMesh) return;
         const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
         mats.forEach((m) => {
           if (!m || !m.emissive) return;
-          m.emissiveIntensity = damp(m.emissiveIntensity || 0.18, hitFlash, 18, dt);
+          m.emissiveIntensity = damp(m.emissiveIntensity || 1.2, hitFlash, 18, dt);
         });
       });
 
@@ -253,14 +266,16 @@ export default function GLBFighter({
 
       applyPoseToBones(finalPose, rig.boneMap, bonesRef.current, rootBoneRef.current, dt);
 
-      // 6b. Breathing / vertical bob. The pose's hipY is the desired
-      //     world-space height of the model above the ground. Applied
-      //     here on the modelGroup (world space) so the 0.01 GLB
-      //     internal scale doesn't interfere.
-      const breathY = finalPose.hipY || 0;
+      // 6b. Breathing / vertical bob. The pose's hipY represents the
+      //     silhouette fighter's "ready stance" height; for the GLB
+      //     character we use it purely as a breathing oscillation
+      //     (~1 cm of world-space bob) so the rest pose stays anchored
+      //     at the correct floor height. The GLB's own Hips bone is
+      //     already at the right Y; we don't add any static offset.
+      const breathOsc = ((finalPose.hipY || 0) - 1.0) * 0.01; // ~1cm bob
       modelGroupRef.current.position.y = damp(
         modelGroupRef.current.position.y,
-        breathY * 0.05, // small, in world meters
+        breathOsc,
         8,
         dt
       );
@@ -292,6 +307,17 @@ export default function GLBFighter({
     <group ref={groupRef}>
       <group ref={modelGroupRef}>
         <primitive object={cloned} />
+        {/* Key light parented to the model so it moves with the fighter
+            and isn't blocked by arena geometry. Bright directional
+            light from above + front so the PBR/Lambert materials
+            actually render visibly. */}
+        <directionalLight
+          position={[0, 4, 4]}
+          intensity={2.5}
+          color="#ffffff"
+        />
+        {/* Ambient fill so the dark side of the model isn't pure black. */}
+        <ambientLight intensity={0.6} color="#ffffff" />
       </group>
     </group>
   );
