@@ -119,15 +119,44 @@ export function resolveAttack(attack, defender, distance, dt, ctx = {}) {
     return { hit: false, reason: 'unknown_move' };
   }
 
-  // Realistic range check: the hit only lands when the attacker is at
-  // the move's intended combat distance. Too close (point-blank — the
-  // weapon hasn't reached the target yet) and too far (out of reach)
-  // both miss. The sweet spot is roughly between 30% and 100% of the
-  // move's range. This makes the physics feel real: you have to be at
-  // the right distance, not just close enough.
-  const minRange = data.range * 0.3;
-  if (distance < minRange || distance > data.range) {
+  // ---- Range check (edge-to-edge) ------------------------------------
+  // The hit only lands when the attacker is at the move's intended combat
+  // distance. Too close (point-blank -- the weapon hasn't reached the
+  // target yet) and too far (out of reach) both miss. Each move declares
+  // its own [minRange, maxRange] band; "optimalRange" is the sweet spot
+  // that lands at full damage.
+  const minRange = data.minRange != null ? data.minRange : data.range * 0.3;
+  const maxRange = data.maxRange != null ? data.maxRange : data.range;
+  if (distance < minRange || distance > maxRange) {
     return { hit: false, reason: 'out_of_range' };
+  }
+
+  // ---- Facing check --------------------------------------------------
+  // The attacker must be oriented toward the defender. Without this the
+  // defender can be hit from behind (e.g. a knockback-flip mid-punch),
+  // which looks and feels wrong. We compare the sign of the attacker's
+  // facing to the sign of (defender - attacker) on the X axis. If they
+  // disagree the hit cleanly misses.
+  if (attack.position && defender.position && attack.facing != null) {
+    const dx = defender.position[0] - attack.position[0];
+    if (dx !== 0) {
+      const correctSide = Math.sign(dx) === Math.sign(attack.facing);
+      if (!correctSide) {
+        return { hit: false, reason: 'wrong_facing' };
+      }
+    }
+  }
+
+  // ---- Damage falloff at the edges of the range band -----------------
+  // Optimal hits deal 100%. Hits outside optimalRange +/- 0.4 deal 80%.
+  // Pure reach (distance >= optimal + 0.4) also takes 80% so the move
+  // remains useful at the edge of its band.
+  let rangeScale = 1.0;
+  if (data.optimalRange != null) {
+    const off = Math.abs(distance - data.optimalRange);
+    if (off > 0.4) {
+      rangeScale = 0.8;
+    }
   }
 
   // Strict active frame check. The hit only lands during the exact
@@ -154,7 +183,7 @@ export function resolveAttack(attack, defender, distance, dt, ctx = {}) {
   }
 
   // Compute damage.
-  let damage = data.damage;
+  let damage = data.damage * rangeScale;
 
   // Counter-hit bonus.
   const counterHit = isCounterHitVulnerable(defender, defender.anim);
@@ -179,6 +208,7 @@ export function resolveAttack(attack, defender, distance, dt, ctx = {}) {
     reaction,
     knockback: data.knockback,
     counterHit,
+    rangeScale,
     reason: 'hit',
   };
 }
@@ -233,8 +263,11 @@ export function resolveParry(attack, defender) {
   const inParryWindow = localTime >= pData.startup && localTime <= pData.startup + pData.active;
 
   if (!inParryWindow) {
-    // Late/early parry becomes a normal hit.
-    return resolveAttack(attack, { ...defender, anim: 'idle', isBlocking: false }, 0, 0);
+    // Late/early parry becomes a normal hit. Pass a distance that is
+    // inside the move's range band so the new edge-to-edge range
+    // check doesn't false-reject the fallthrough hit.
+    const fallthroughDistance = data && data.optimalRange ? data.optimalRange : 2.0;
+    return resolveAttack(attack, { ...defender, anim: 'idle', isBlocking: false }, fallthroughDistance, 0);
   }
 
   return {
@@ -259,8 +292,23 @@ export function resolveClinch(attacker, defender, distance) {
   const data = MOVE_DATA.clinch;
   const dist = distance != null ? distance : 0;
 
-  if (dist > data.range) {
+  // Edge-to-edge range band (uses new minRange/maxRange if defined,
+  // falls back to legacy single range field).
+  const minRange = data.minRange != null ? data.minRange : 0;
+  const maxRange = data.maxRange != null ? data.maxRange : data.range;
+  if (dist < minRange || dist > maxRange) {
     return { success: false, reason: 'out_of_range' };
+  }
+
+  // Facing check: must reach forward to clinch.
+  if (attacker && defender && attacker.position && defender.position && attacker.facing != null) {
+    const dx = defender.position[0] - attacker.position[0];
+    if (dx !== 0) {
+      const correctSide = Math.sign(dx) === Math.sign(attacker.facing);
+      if (!correctSide) {
+        return { success: false, reason: 'wrong_facing' };
+      }
+    }
   }
 
   // Cannot clinch a defender who is already clinched or throwing.
@@ -299,8 +347,21 @@ export function resolveThrow(attacker, defender, distance) {
   const data = MOVE_DATA.throw;
   const dist = distance != null ? distance : 0;
 
-  if (dist > data.range) {
+  const minRange = data.minRange != null ? data.minRange : 0;
+  const maxRange = data.maxRange != null ? data.maxRange : data.range;
+  if (dist < minRange || dist > maxRange) {
     return { success: false, reason: 'out_of_range' };
+  }
+
+  // Facing check: must reach forward to throw.
+  if (attacker && defender && attacker.position && defender.position && attacker.facing != null) {
+    const dx = defender.position[0] - attacker.position[0];
+    if (dx !== 0) {
+      const correctSide = Math.sign(dx) === Math.sign(attacker.facing);
+      if (!correctSide) {
+        return { success: false, reason: 'wrong_facing' };
+      }
+    }
   }
 
   if (defender.anim === 'backstep') {

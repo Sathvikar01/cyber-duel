@@ -1,9 +1,11 @@
 import { useRef } from 'react';
 import { Canvas } from '@react-three/fiber';
-import SilhouetteFighter from '../fighters/SilhouetteFighter';
+import GLBFighter from '../fighters/GLBFighter.jsx';
 
 /**
- * Renders a single SilhouetteFighter in a preview pose for selection screens.
+ * Renders a single fighter in a preview pose for the character-select
+ * screen. Uses GLBFighter (real three.js glTF character) so the preview
+ * matches the in-game model.
  *
  * Props:
  * - character: full character config object (id, name, bodyColor, accentColor,
@@ -45,7 +47,7 @@ export default function FighterPreview({ character, arena }) {
         <directionalLight position={[2, 5, 4]} intensity={1.2} color="#f0e6d2" castShadow />
         <pointLight position={[-2, 3, 2]} intensity={0.8} color={character?.glowColor || '#d4af37'} distance={12} decay={2} />
 
-        <SilhouetteFighter
+        <GLBFighter
           stateRef={stateRef}
           character={character}
           isPlayer
