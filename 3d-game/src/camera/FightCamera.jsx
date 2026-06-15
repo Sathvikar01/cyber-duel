@@ -25,7 +25,12 @@ export default function FightCamera({ playerRef, npcRef, gameRef }) {
   const { width, height } = useThree((state) => state.size);
 
   // World height we want the orthographic frustum to represent at zoom = 1.
-  const worldHeight = 6;
+  // Was 6; bumped to 7 so the GLB characters (1.8m tall) have more
+  // room to breathe -- they were rendering at only ~21% of the screen
+  // height before. With worldHeight=7 and zoom=0.7 the effective
+  // visible height is 10 units, giving the fighters a comfortable
+  // ~18% of the screen each.
+  const worldHeight = 7;
   const cameraArgs = useMemo(() => {
     const aspect = height > 0 ? width / height : 1;
     const worldWidth = worldHeight * aspect;
