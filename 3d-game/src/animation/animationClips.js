@@ -69,13 +69,35 @@ export const CLIPS = {
     }),
   ],
 
+  // Walk cycle: two phases that loop. The phase value is driven by
+  // the fighter's `animProgress` (0..1), so each full cycle is one
+  // step-pair. The legs swing forward/back in alternation, the arms
+  // counter-swing, the torso rolls side to side, and the head bobs
+  // up slightly at mid-stride. Magnitudes are tuned to read clearly
+  // on the GLB characters (whose bones need larger Euler swings than
+  // the silhouette primitives to look like a step).
   walk: [
-    ph(0, 1, {
-      hipY: 1.04, torso: d([0, 0, 0.04]), head: d([0, 0, 0]),
-      armL: d([0.2, 0, 0.4]), foreL: d([-1.2, 0, 0]),
-      armR: d([0.8, 0, -0.4]), foreR: d([-1.2, 0, 0]),
-      legL: d([-0.65, 0, 0.08]), calfL: d([0.65, 0, 0]),
-      legR: d([0.65, 0, -0.08]), calfR: d([0, 0, 0]),
+    ph(0, 0.5, {
+      hipY: 1.04,
+      torso: d([0, 0, 0.06]),
+      head: d([0, 0, 0]),
+      // Left leg forward + right leg back.
+      legL: d([-0.7, 0, 0.05]), calfL: d([0.55, 0, 0]),
+      legR: d([0.7, 0, -0.05]), calfR: d([0.1, 0, 0]),
+      // Arms counter-swing: right arm forward.
+      armL: d([0.7, 0, 0.4]), foreL: d([-1.2, 0, 0]),
+      armR: d([0.3, 0, -0.4]), foreR: d([-1.2, 0, 0]),
+    }),
+    ph(0.5, 1.0, {
+      hipY: 1.04,
+      torso: d([0, 0, -0.06]),
+      head: d([0, 0, 0]),
+      // Right leg forward + left leg back.
+      legL: d([0.7, 0, 0.05]), calfL: d([0.1, 0, 0]),
+      legR: d([-0.7, 0, -0.05]), calfR: d([0.55, 0, 0]),
+      // Arms counter-swing: left arm forward.
+      armL: d([0.3, 0, 0.4]), foreL: d([-1.2, 0, 0]),
+      armR: d([0.7, 0, -0.4]), foreR: d([-1.2, 0, 0]),
     }),
   ],
 

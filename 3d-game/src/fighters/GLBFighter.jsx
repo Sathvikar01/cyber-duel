@@ -127,6 +127,23 @@ export default function GLBFighter({
     bonesRef.current = map;
 
     // 3. Rest-pose correction. Done once so the rest pose is stable.
+    //
+    // Critical: do NOT rotate the Hips 180° around Y -- that flips the
+    // character's "front" to face away from the camera. The Xbot ships
+    // already facing -Z, which is the correct "into the screen"
+    // direction for a side-view fighter. The horizontal-flip on the
+    // outer modelGroupRef handles left/right facing.
+    //
+    // Also critical: do NOT touch the Hips.position.y in rest. The GLB
+    // uses a 0.01 internal scale (cm -> m) and the Hips local-Y in
+    // model units is 103.99; overriding it to 1.0 would place the hips
+    // at world Y=0.01 and shove the legs (children with negative local
+    // Y) below the floor.
+    //
+    // The only corrections we apply: tilt the arms forward from the
+    // horizontal T-pose into a natural "ready" hang. The Z rotation
+    // here is small and positive; the pose's idle `armL=[0.5, 0, 0.4]`
+    // then stacks on top to bring the hands up into a guard.
     if (rig.restCorrection) {
       cloned.traverse((obj) => {
         const corr = rig.restCorrection[obj.name];
@@ -234,6 +251,18 @@ export default function GLBFighter({
     const finalPose = dir > 0 ? pose : mirrorPose(pose);
 
     applyPoseToBones(finalPose, rig.boneMap, bonesRef.current, rootBoneRef.current, dt);
+
+    // 6b. Breathing / vertical bob. The pose's hipY is the desired
+    //     world-space height of the model above the ground. Applied
+    //     here on the modelGroup (world space) so the 0.01 GLB
+    //     internal scale doesn't interfere.
+    const breathY = finalPose.hipY || 0;
+    modelGroupRef.current.position.y = damp(
+      modelGroupRef.current.position.y,
+      breathY * 0.05, // small, in world meters
+      8,
+      dt
+    );
 
     // 7. Backstep dust on landing.
     if (

@@ -15,7 +15,7 @@ DEFENSIVE_MOVES: FrozenSet[str] = frozenset({"parry", "backstep"})
 MOVE_DATA: Dict[str, dict] = {
     "jab": {
         "damage": 6, "staminaCost": 8,
-        "range": 3.0, "minRange": 1.6, "optimalRange": 2.2, "maxRange": 3.0,
+        "range": 3.0, "minRange": 1.9, "optimalRange": 2.4, "maxRange": 3.0,
         "startup": 0.09, "active": 0.06, "recovery": 0.25,
         "cancelWindow": 0.35, "hitReaction": "flinch",
         "knockback": 0.20, "attackerPushback": 0.02,
@@ -26,7 +26,7 @@ MOVE_DATA: Dict[str, dict] = {
     },
     "cross": {
         "damage": 10, "staminaCost": 12,
-        "range": 3.3, "minRange": 1.8, "optimalRange": 2.5, "maxRange": 3.3,
+        "range": 3.3, "minRange": 2.0, "optimalRange": 2.7, "maxRange": 3.3,
         "startup": 0.12, "active": 0.08, "recovery": 0.30,
         "cancelWindow": 0.32, "hitReaction": "stumble",
         "knockback": 0.45, "attackerPushback": 0.05,
@@ -37,7 +37,7 @@ MOVE_DATA: Dict[str, dict] = {
     },
     "low_kick": {
         "damage": 8, "staminaCost": 10,
-        "range": 3.4, "minRange": 1.9, "optimalRange": 2.7, "maxRange": 3.4,
+        "range": 3.4, "minRange": 2.1, "optimalRange": 2.8, "maxRange": 3.4,
         "startup": 0.14, "active": 0.10, "recovery": 0.28,
         "cancelWindow": 0.32, "hitReaction": "flinch",
         "knockback": 0.30, "attackerPushback": 0.04,
@@ -48,7 +48,7 @@ MOVE_DATA: Dict[str, dict] = {
     },
     "roundhouse": {
         "damage": 14, "staminaCost": 22,
-        "range": 3.8, "minRange": 2.2, "optimalRange": 3.0, "maxRange": 3.8,
+        "range": 3.8, "minRange": 2.3, "optimalRange": 3.1, "maxRange": 3.8,
         "startup": 0.24, "active": 0.12, "recovery": 0.44,
         "cancelWindow": 0.22, "hitReaction": "knockdown",
         "knockback": 1.10, "attackerPushback": 0.12,
@@ -59,7 +59,7 @@ MOVE_DATA: Dict[str, dict] = {
     },
     "uppercut": {
         "damage": 16, "staminaCost": 24,
-        "range": 2.6, "minRange": 1.4, "optimalRange": 1.9, "maxRange": 2.6,
+        "range": 2.6, "minRange": 1.5, "optimalRange": 2.0, "maxRange": 2.6,
         "startup": 0.20, "active": 0.10, "recovery": 0.50,
         "cancelWindow": 0.18, "hitReaction": "knockdown",
         "knockback": 0.85, "attackerPushback": 0.10,

@@ -93,12 +93,15 @@ function dist(a, b) {
  * Used for all hit/resolution checks. Stops hits from landing when the
  * two bodies are visually touching.
  *
- * Body radius defaults to 0.45 which matches the silhouette
- * half-width (torsoW ~ 0.36..0.45 depending on fighter). For GLB
- * characters the fighter state can carry a custom radius read from
- * the model bounding box.
+ * Body radius default is 0.55 to match the GLB character half-widths:
+ *   - Xbot chest ~ 0.45 m wide (half = 0.225 m, but arms add ~0.15 m
+ *     of reach at the shoulder) -> effective body half-width ~0.5 m.
+ *   - RobotExpressive torso ~ 0.6 m wide -> half ~0.3 m, plus arms.
+ * Bumping the default to 0.55 ensures the edge-to-edge gap is at
+ * least 1.1 m for two fighters just touching center-to-center, which
+ * keeps them well outside the jab's 1.6 m minRange.
  */
-const DEFAULT_BODY_RADIUS = 0.45;
+const DEFAULT_BODY_RADIUS = 0.55;
 function edgeDist(a, b, aRadius, bRadius) {
   const center = dist(a, b);
   const ar = aRadius != null ? aRadius : DEFAULT_BODY_RADIUS;
@@ -113,6 +116,7 @@ function createFighterState(config, isPlayer, startX) {
     anim: 'idle',
     animProgress: 0,
     isAttacking: false,
+    attackStartX: null,
     isBlocking: false,
     isHit: false,
     isPlayer,
@@ -302,6 +306,12 @@ function Game(
     p.stamina = spendStamina(p.stamina, move, ctx);
     p.isAttacking = true;
     p.isBlocking = false;
+    // Snapshot the X position at attack start. The attacker is locked
+    // to this X for the entire startup + active window so a held
+    // forward input can't lunge the punch into range -- the hit has
+    // to land from where the button was actually pressed.
+    p.attackStartX = p.position[0];
+    p.velX = 0;
     setAnim(p, move);
 
     // Track the player's recent moves for the AI counter model.
@@ -324,6 +334,10 @@ function Game(
     n.stamina = spendStamina(n.stamina, move, ctx);
     n.isAttacking = true;
     n.isBlocking = false;
+    // Same lock as the player: freeze the X at attack start so the
+    // AI's own approach velocity can't drag the NPC into range.
+    n.attackStartX = n.position[0];
+    n.velX = 0;
     setAnim(n, move);
   }
 
@@ -644,11 +658,18 @@ function Game(
     }
 
     if (fighter.animProgress >= 1) {
-      fighter.animProgress = 0;
-      fighter.isAttacking = false;
-      fighter.isBlocking = false;
-      fighter.anim = 'idle';
-      fighter.hitConnected = false;
+      // The walk animation is a continuous cycle: when the progress
+      // reaches 1 we wrap back to 0 and keep playing. Every other
+      // anim (attacks, reactions) plays once and transitions to idle.
+      if (fighter.anim === 'walk') {
+        fighter.animProgress = fighter.animProgress % 1;
+      } else {
+        fighter.animProgress = 0;
+        fighter.isAttacking = false;
+        fighter.isBlocking = false;
+        fighter.anim = 'idle';
+        fighter.hitConnected = false;
+      }
     }
   }
 
@@ -794,6 +815,26 @@ function Game(
       p.position[0] += p.velX * dt;
       p.position[2] += p.velZ * dt;
 
+      // Attack lock: while the fighter is in startup + active of an
+      // attack, their X position is frozen to attackStartX (snapshotted
+      // in startPlayerAttack). This stops a held forward key from
+      // lunging the punch into range so it lands "at touching distance"
+      // visually. The lock is released during recovery so the fighter
+      // can re-position for the next move.
+      if (p.isAttacking && p.attackStartX != null) {
+        const data = MOVE_DATA[p.anim];
+        if (data) {
+          const total = data.startup + data.active + data.recovery;
+          const t = (p.animProgress || 0) * total;
+          if (t <= data.startup + data.active) {
+            p.position[0] = p.attackStartX;
+            p.velX = 0;
+          } else {
+            p.attackStartX = null;
+          }
+        }
+      }
+
       if (hasMove) {
         if (p.anim !== 'backstep') p.anim = 'walk';
         if (Math.abs(move.x) > 0.01) p.facing = move.x > 0 ? 1 : -1;
@@ -918,6 +959,24 @@ function Game(
         // procedural lean in SilhouetteFighter settles to neutral.
         n.velX += (0 - n.velX) * MOVEMENT_ACCEL * dt;
         n.velZ += (0 - n.velZ) * MOVEMENT_ACCEL * dt;
+      }
+
+      // Attack lock (NPC): same as the player -- the X is frozen at
+      // attackStartX during startup + active. Without this, the AI's
+      // own approach velocity could drag the NPC's punch into range
+      // and make every attack land.
+      if (n.isAttacking && n.attackStartX != null) {
+        const data = MOVE_DATA[n.anim];
+        if (data) {
+          const total = data.startup + data.active + data.recovery;
+          const t = (n.animProgress || 0) * total;
+          if (t <= data.startup + data.active) {
+            n.position[0] = n.attackStartX;
+            n.velX = 0;
+          } else {
+            n.attackStartX = null;
+          }
+        }
       }
     }
 

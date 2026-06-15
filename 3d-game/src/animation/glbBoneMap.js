@@ -26,7 +26,11 @@
  */
 
 export const XBOT_BONE_MAP = Object.freeze({
-  hipY: { bone: 'mixamorigHips', type: 'positionY' },
+  // Note: hipY is intentionally NOT mapped to a bone position. The Xbot
+  // GLB uses a 0.01 cm->m internal scale, so writing positionY to the
+  // Hips bone in model units is wrong (it would shove the legs below
+  // the floor). Instead, hipY is applied as a world-space Y offset on
+  // the model group in GLBFighter.jsx -- see the breathing block.
   torso: { bone: 'mixamorigSpine2', type: 'rotation' },
   head: { bone: 'mixamorigHead', type: 'rotation' },
   armL: { bone: 'mixamorigLeftArm', type: 'rotation' },
@@ -81,7 +85,9 @@ export const XBOT_REST_CORRECTION = Object.freeze({
  * and toes are left to their rest pose.
  */
 export const ROBOT_BONE_MAP = Object.freeze({
-  hipY: { bone: 'Bone_BackWaist', type: 'positionY' },
+  // hipY omitted for the same reason as Xbot (RobotExpressive uses
+  // its own internal scale; we apply hipY as a world-space group
+  // offset in GLBFighter).
   torso: { bone: 'Bone_SpineChest', type: 'rotation' },
   head: { bone: 'Bone_Head', type: 'rotation' },
   armL: { bone: 'Bone_LeftArm', type: 'rotation' },

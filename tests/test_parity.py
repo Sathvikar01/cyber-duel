@@ -76,11 +76,11 @@ def test_constants_match_js() -> None:
     assert MOVE_DATA["parry"]["active"] == 0.20
     assert MOVE_DATA["backstep"]["tags"][:2] == ("defensive", "evasive")
     # New range-band fields
-    assert MOVE_DATA["jab"]["minRange"] == 1.6
-    assert MOVE_DATA["jab"]["optimalRange"] == 2.2
+    assert MOVE_DATA["jab"]["minRange"] == 1.9
+    assert MOVE_DATA["jab"]["optimalRange"] == 2.4
     assert MOVE_DATA["jab"]["maxRange"] == 3.0
-    assert MOVE_DATA["uppercut"]["minRange"] == 1.4
-    assert MOVE_DATA["uppercut"]["optimalRange"] == 1.9
+    assert MOVE_DATA["uppercut"]["minRange"] == 1.5
+    assert MOVE_DATA["uppercut"]["optimalRange"] == 2.0
 
 
 def test_combo_scale() -> None:
@@ -114,22 +114,22 @@ def _progress_in_active(move: str, frac: float = 0.5) -> float:
 def test_resolve_attack_range_and_active() -> None:
     attacker = {"move": "jab", "animProgress": _progress_in_active("jab", 0.5)}
     defender = {"hp": 100, "stamina": 100, "anim": "idle", "isBlocking": False, "isAttacking": False}
-    # jab edge-to-edge range band: [1.6, 3.0], optimal 2.2
-    # In range, sweet spot → full damage.
-    r = resolve_attack(attacker, defender, distance=2.2, dt=0.016)
+    # jab edge-to-edge range band: [1.9, 3.0], optimal 2.4
+    # In range, sweet spot -> full damage.
+    r = resolve_attack(attacker, defender, distance=2.4, dt=0.016)
     assert r["hit"] and r["damage"] == 6, r
     assert r["rangeScale"] == 1.0, r
-    # Out of range (too far) → out_of_range.
+    # Out of range (too far) -> out_of_range.
     r = resolve_attack(attacker, defender, distance=4.0, dt=0.016)
     assert not r["hit"] and r["reason"] == "out_of_range", r
-    # Touching range (distance 0.5) → out_of_range, no more "lands on
+    # Touching range (distance 0.5) -> out_of_range, no more "lands on
     # the shoulder" cheesing.
     r = resolve_attack(attacker, defender, distance=0.5, dt=0.016)
     assert not r["hit"] and r["reason"] == "out_of_range", r
-    # animProgress=0.0 → before startup → not_active. Use optimal range
-    # (2.2) so the range check passes and we get not_active, not
-    # out_of_range.
-    r = resolve_attack({"move": "jab", "animProgress": 0.0}, defender, 2.2, 0.016)
+    # animProgress=0.0 -> before startup -> not_active. Use optimal
+    # range (2.4) so the range check passes and we get not_active,
+    # not out_of_range.
+    r = resolve_attack({"move": "jab", "animProgress": 0.0}, defender, 2.4, 0.016)
     assert not r["hit"] and r["reason"] == "not_active", r
 
 
@@ -196,10 +196,10 @@ def test_counter_hit_bonus() -> None:
 def test_combo_scaling_lowers_damage() -> None:
     attacker = {"move": "jab", "animProgress": _progress_in_active("jab", 0.5)}
     defender = {"hp": 1000, "stamina": 1000, "anim": "idle", "isAttacking": False, "isBlocking": False}
-    # Use jab's optimal range (2.2) so both hits register at full damage
+    # Use jab's optimal range (2.4) so both hits register at full damage
     # and only the combo scaling differentiates them.
-    r0 = resolve_attack(attacker, defender, 2.2, 0.016, {"comboCount": 0})
-    r6 = resolve_attack(attacker, defender, 2.2, 0.016, {"comboCount": 6})
+    r0 = resolve_attack(attacker, defender, 2.4, 0.016, {"comboCount": 0})
+    r6 = resolve_attack(attacker, defender, 2.4, 0.016, {"comboCount": 6})
     assert r0["hit"] and r6["hit"], (r0, r6)
     assert r0["damage"] > r6["damage"], (r0["damage"], r6["damage"])
 
@@ -256,7 +256,7 @@ def test_jab_misses_when_facing_away() -> None:
 
 
 def test_jab_hits_at_optimal_range_with_full_damage() -> None:
-    """At the sweet spot (jab.optimalRange = 2.2), rangeScale is 1.0
+    """At the sweet spot (jab.optimalRange = 2.4), rangeScale is 1.0
     and the hit lands with the move's full base damage."""
     attacker = {
         "move": "jab", "animProgress": _progress_in_active("jab", 0.5),
@@ -264,10 +264,10 @@ def test_jab_hits_at_optimal_range_with_full_damage() -> None:
     }
     defender = {
         "hp": 100, "stamina": 100, "anim": "idle",
-        "position": [2.2, 0, 0],
+        "position": [2.4, 0, 0],
         "isBlocking": False, "isAttacking": False,
     }
-    r = resolve_attack(attacker, defender, distance=2.2, dt=0.016)
+    r = resolve_attack(attacker, defender, distance=2.4, dt=0.016)
     assert r["hit"] is True, r
     assert r["rangeScale"] == 1.0, r
     assert r["damage"] == 6, r  # full jab damage, no scaling
@@ -283,14 +283,34 @@ def test_jab_at_edge_of_range_does_reduced_damage() -> None:
     }
     defender = {
         "hp": 100, "stamina": 100, "anim": "idle",
-        "position": [2.9, 0, 0],  # jab optimal 2.2 + 0.7 = edge
+        "position": [2.9, 0, 0],  # jab optimal 2.4 + 0.5 = edge
         "isBlocking": False, "isAttacking": False,
     }
     r = resolve_attack(attacker, defender, distance=2.9, dt=0.016)
     assert r["hit"] is True, r
     assert r["rangeScale"] == 0.8, r
-    # 6 * 0.8 = 4.8 → rounds to 5
+    # 6 * 0.8 = 4.8 -> rounds to 5
     assert r["damage"] == 5, r
+
+
+def test_ai_choose_attack_returns_null_when_out_of_all_ranges() -> None:
+    """At spawn the fighters are 10 units apart (center-to-center).
+    No jab/cross/kick can reach that far, so chooseAttack must
+    return None so the orchestrator falls through to the movement
+    fallback. Without this gate the NPC would swing at the air
+    from across the arena instead of closing the distance first.
+    """
+    from data.v2.resolver_py.ai_offense import choose_attack
+
+    archetype = AI_ARCHETYPES["balanced"]
+    diff = get_difficulty_profile("balanced", round=1)
+    # Stamina is high so the only filter is range.
+    chosen = choose_attack(10.0, 100.0, diff, archetype, [])
+    assert chosen is None, f"expected None at dist=10, got {chosen}"
+
+    # And at a reasonable in-range distance the AI does pick an attack.
+    chosen_close = choose_attack(2.4, 100.0, diff, archetype, [])
+    assert chosen_close in {"jab", "cross", "low_kick", "roundhouse", "uppercut"}, chosen_close
 
 
 def test_archetypes_and_difficulty() -> None:

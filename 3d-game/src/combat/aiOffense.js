@@ -45,13 +45,36 @@ function defaultRanges(cfg) {
  * @param {object} [cfg]
  * @returns {string|null}
  */
+/**
+ * Body half-width used to convert edge-to-edge range bands (in
+ * MOVE_DATA) into the center-to-center distances the AI reasons
+ * about. Matches Game.jsx's edgeDist() default. Two fighters at
+ * touching range have center-to-center = 2 * BODY_HALF_WIDTH.
+ */
+const BODY_HALF_WIDTH = 0.45;
+
 export function chooseAttack(dist, stamina, difficulty, archetype, staleHistory, cfg) {
   const candidates = PLAYER_MOVES.filter((m) => canUseMove(m, stamina));
   if (candidates.length === 0) return null;
 
+  // Hard range gate: if NO move can reach the player at the current
+  // center-to-center distance, return null so the orchestrator falls
+  // through to the movement/spacing fallback. Without this gate the
+  // NPC swings at the air from across the arena instead of closing
+  // the distance first.
+  const centerToEdgeOffset = BODY_HALF_WIDTH * 2; // 0.9
+  const reachable = candidates.filter((m) => {
+    const d = MOVE_DATA[m];
+    if (!d) return false;
+    // Move's maxRange is edge-to-edge; convert to center-to-center.
+    return dist <= (d.maxRange ?? d.range) + centerToEdgeOffset;
+  });
+  if (reachable.length === 0) return null;
+  const usable = reachable;
+
   const ranges = defaultRanges(cfg);
 
-  const scored = candidates.map((move) => {
+  const scored = usable.map((move) => {
     const data = MOVE_DATA[move];
     let score = 0;
 
