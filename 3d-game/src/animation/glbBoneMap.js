@@ -26,7 +26,11 @@
  */
 
 export const XBOT_BONE_MAP = Object.freeze({
-  hipY: { bone: 'mixamorigHips', type: 'positionY' },
+  // Note: hipY is intentionally NOT mapped to a bone position. The Xbot
+  // GLB uses a 0.01 cm->m internal scale, so writing positionY to the
+  // Hips bone in model units is wrong (it would shove the legs below
+  // the floor). Instead, hipY is applied as a world-space Y offset on
+  // the model group in GLBFighter.jsx -- see the breathing block.
   torso: { bone: 'mixamorigSpine2', type: 'rotation' },
   head: { bone: 'mixamorigHead', type: 'rotation' },
   armL: { bone: 'mixamorigLeftArm', type: 'rotation' },
@@ -44,54 +48,67 @@ export const XBOT_BONE_MAP = Object.freeze({
  * naturally at the sides and the character stands upright. Applied at
  * mount; thereafter, our pose Euler angles are additive deltas.
  *
- * Values tuned by eye against Xbot.glb (three.js r184):
- *   - LeftArm:  z = +0.6  (~+34 deg, rotates the T-pose arm down to side)
- *   - RightArm: z = -0.6  (~-34 deg, mirror)
- *   - Hips:     y = +π    (Y-up; Mixamo ships Z-up for Xbot so we need
- *                           a Y-flip to align with our Y-up world)
+ * Bone names use the Mixamo `mixamorig` prefix because that's what
+ * the Xbot GLB actually exports. (The old version of this table
+ * used bare names like "Hips" / "LeftArm" which never matched the
+ * scene, so the correction was silently a no-op and the Xbot stayed
+ * in T-pose with arms sticking out horizontally.)
  *
- * If bones look inverted, flip the signs in this block.
+ * Values tuned by eye against Xbot.glb (three.js r184):
+ *   - mixamorigHips:  no rotation (Y-flip was removed -- it was
+ *                     making the character face away from the camera).
+ *   - mixamorigLeftArm:  z = +π/2  (~+90 deg, hangs the T-pose arm
+ *                                     straight down)
+ *   - mixamorigRightArm: z = -π/2  (~-90 deg, mirror)
+ *
+ * The pose's idle `armL=[0.5, 0, 0.4]` then adds a forward pitch on
+ * top, bringing the hands up into a guard.
  */
 export const XBOT_REST_CORRECTION = Object.freeze({
-  Hips: { rotation: [0, Math.PI, 0] },
-  Spine: { rotation: [0, 0, 0] },
-  Spine1: { rotation: [0, 0, 0] },
-  Spine2: { rotation: [0, 0, 0] },
-  Neck: { rotation: [0, 0, 0] },
-  Head: { rotation: [0, 0, 0] },
-  LeftArm: { rotation: [0, 0, 0.6] },
-  LeftForeArm: { rotation: [0, 0, 0] },
-  LeftHand: { rotation: [0, 0, 0] },
-  RightArm: { rotation: [0, 0, -0.6] },
-  RightForeArm: { rotation: [0, 0, 0] },
-  RightHand: { rotation: [0, 0, 0] },
-  LeftUpLeg: { rotation: [0, 0, 0] },
-  LeftLeg: { rotation: [0, 0, 0] },
-  LeftFoot: { rotation: [0, 0, 0] },
-  RightUpLeg: { rotation: [0, 0, 0] },
-  RightLeg: { rotation: [0, 0, 0] },
-  RightFoot: { rotation: [0, 0, 0] },
+  mixamorigHips: { rotation: [0, 0, 0] },
+  mixamorigSpine: { rotation: [0, 0, 0] },
+  mixamorigSpine1: { rotation: [0, 0, 0] },
+  mixamorigSpine2: { rotation: [0, 0, 0] },
+  mixamorigNeck: { rotation: [0, 0, 0] },
+  mixamorigHead: { rotation: [0, 0, 0] },
+  mixamorigLeftArm: { rotation: [0, 0, Math.PI / 2] },
+  mixamorigLeftForeArm: { rotation: [0, 0, 0] },
+  mixamorigLeftHand: { rotation: [0, 0, 0] },
+  mixamorigRightArm: { rotation: [0, 0, -Math.PI / 2] },
+  mixamorigRightForeArm: { rotation: [0, 0, 0] },
+  mixamorigRightHand: { rotation: [0, 0, 0] },
+  mixamorigLeftUpLeg: { rotation: [0, 0, 0] },
+  mixamorigLeftLeg: { rotation: [0, 0, 0] },
+  mixamorigLeftFoot: { rotation: [0, 0, 0] },
+  mixamorigRightUpLeg: { rotation: [0, 0, 0] },
+  mixamorigRightLeg: { rotation: [0, 0, 0] },
+  mixamorigRightFoot: { rotation: [0, 0, 0] },
 });
 
 /**
  * RobotExpressive bone map (three.js r184).
  *
- * The robot's skeleton is a simplified humanoid with no shoulder twist
- * bone and a single hip. We only drive the limbs we need; head, fingers
- * and toes are left to their rest pose.
+ * Verified by inspect_robot.mjs against the actual GLB skeleton. The
+ * three.js example ships a flat humanoid rig with bones named
+ * `Hips`, `Torso_1`, `Neck`, `Head`, `UpperArmL/R`, `LowerArmL/R`,
+ * `UpperLegL/R`, `LowerLegL/R`, etc. (no `Bone_` prefix). The rest
+ * pose already has the arms at the sides, so no rest-correction
+ * block is needed.
  */
 export const ROBOT_BONE_MAP = Object.freeze({
-  hipY: { bone: 'Bone_BackWaist', type: 'positionY' },
-  torso: { bone: 'Bone_SpineChest', type: 'rotation' },
-  head: { bone: 'Bone_Head', type: 'rotation' },
-  armL: { bone: 'Bone_LeftArm', type: 'rotation' },
-  foreL: { bone: 'Bone_LeftForeArm', type: 'rotation' },
-  armR: { bone: 'Bone_RightArm', type: 'rotation' },
-  foreR: { bone: 'Bone_RightForeArm', type: 'rotation' },
-  legL: { bone: 'Bone_LeftThigh', type: 'rotation' },
-  calfL: { bone: 'Bone_LeftShin', type: 'rotation' },
-  legR: { bone: 'Bone_RightThigh', type: 'rotation' },
-  calfR: { bone: 'Bone_RightShin', type: 'rotation' },
+  // hipY omitted for the same reason as Xbot (RobotExpressive uses
+  // its own internal scale; we apply hipY as a world-space group
+  // offset in GLBFighter).
+  torso: { bone: 'Torso_1', type: 'rotation' },
+  head: { bone: 'Head', type: 'rotation' },
+  armL: { bone: 'UpperArmL', type: 'rotation' },
+  foreL: { bone: 'LowerArmL', type: 'rotation' },
+  armR: { bone: 'UpperArmR', type: 'rotation' },
+  foreR: { bone: 'LowerArmR', type: 'rotation' },
+  legL: { bone: 'UpperLegL', type: 'rotation' },
+  calfL: { bone: 'LowerLegL', type: 'rotation' },
+  legR: { bone: 'UpperLegR', type: 'rotation' },
+  calfR: { bone: 'LowerLegR', type: 'rotation' },
 });
 
 /**

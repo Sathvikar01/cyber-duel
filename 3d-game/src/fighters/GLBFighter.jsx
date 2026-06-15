@@ -127,6 +127,23 @@ export default function GLBFighter({
     bonesRef.current = map;
 
     // 3. Rest-pose correction. Done once so the rest pose is stable.
+    //
+    // Critical: do NOT rotate the Hips 180° around Y -- that flips the
+    // character's "front" to face away from the camera. The Xbot ships
+    // already facing -Z, which is the correct "into the screen"
+    // direction for a side-view fighter. The horizontal-flip on the
+    // outer modelGroupRef handles left/right facing.
+    //
+    // Also critical: do NOT touch the Hips.position.y in rest. The GLB
+    // uses a 0.01 internal scale (cm -> m) and the Hips local-Y in
+    // model units is 103.99; overriding it to 1.0 would place the hips
+    // at world Y=0.01 and shove the legs (children with negative local
+    // Y) below the floor.
+    //
+    // The only corrections we apply: tilt the arms forward from the
+    // horizontal T-pose into a natural "ready" hang. The Z rotation
+    // here is small and positive; the pose's idle `armL=[0.5, 0, 0.4]`
+    // then stacks on top to bring the hands up into a guard.
     if (rig.restCorrection) {
       cloned.traverse((obj) => {
         const corr = rig.restCorrection[obj.name];
@@ -171,84 +188,104 @@ export default function GLBFighter({
 
   // Position update + facing flip + pose application.
   useFrame((_state, dt) => {
-    const s = stateRef.current;
-    if (!s) return;
-    if (!groupRef.current || !modelGroupRef.current) return;
+    try {
+      const s = stateRef.current;
+      if (!s) return;
+      if (!groupRef.current || !modelGroupRef.current) return;
 
-    // 1. Position (top-level group).
-    const px = s.position?.[0] || 0;
-    const py = s.position?.[1] || 0;
-    const pz = s.position?.[2] || 0;
-    groupRef.current.position.set(px, py, pz);
+      // 1. Position (top-level group).
+      const px = s.position?.[0] || 0;
+      const py = s.position?.[1] || 0;
+      const pz = s.position?.[2] || 0;
+      groupRef.current.position.set(px, py, pz);
 
-    // 2. Facing (horizontal flip on the model group). Damped to avoid
-    //    popping on knockback-flip events.
-    const dir = s.facing > 0 ? 1 : -1;
-    modelGroupRef.current.scale.x = damp(modelGroupRef.current.scale.x, dir, 14, dt);
+      // 2. Facing (horizontal flip on the model group). Damped to avoid
+      //    popping on knockback-flip events.
+      const dir = s.facing > 0 ? 1 : -1;
+      modelGroupRef.current.scale.x = damp(modelGroupRef.current.scale.x, dir, 14, dt);
 
-    // 3. Per-fighter body scale (1.0 default; brute/monk/assassin get
-    //    tweaks via FIGHTER_BONE_SCALES applied at mount, plus a uniform
-    //    bodyScale from the character config that scales everything).
-    const bodyScale = (character && character.bodyScale) || 1.0;
-    const baseY = damp(modelGroupRef.current.scale.y, bodyScale, 8, dt);
-    const baseZ = damp(modelGroupRef.current.scale.z, bodyScale, 8, dt);
-    modelGroupRef.current.scale.y = baseY;
-    modelGroupRef.current.scale.z = baseZ;
+      // 3. Per-fighter body scale (1.0 default; brute/monk/assassin get
+      //    tweaks via FIGHTER_BONE_SCALES applied at mount, plus a uniform
+      //    bodyScale from the character config that scales everything).
+      const bodyScale = (character && character.bodyScale) || 1.0;
+      const baseY = damp(modelGroupRef.current.scale.y, bodyScale, 8, dt);
+      const baseZ = damp(modelGroupRef.current.scale.z, bodyScale, 8, dt);
+      modelGroupRef.current.scale.y = baseY;
+      modelGroupRef.current.scale.z = baseZ;
 
-    // 4. Tilt: forward lean on attacker push-back, backward lean on hit.
-    const tiltX = (s.knockbackTilt || 0) - (s.attackerPushbackTilt || 0);
-    modelGroupRef.current.rotation.x = damp(
-      modelGroupRef.current.rotation.x,
-      tiltX,
-      12,
-      dt
-    );
+      // 4. Tilt: forward lean on attacker push-back, backward lean on hit.
+      const tiltX = (s.knockbackTilt || 0) - (s.attackerPushbackTilt || 0);
+      modelGroupRef.current.rotation.x = damp(
+        modelGroupRef.current.rotation.x,
+        tiltX,
+        12,
+        dt
+      );
 
-    // 5. Hit flash: brighten the whole rig briefly.
-    const hitFlash = s.isHit ? 1.5 : 0.18;
-    cloned.traverse((obj) => {
-      if (!obj.isMesh) return;
-      const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
-      mats.forEach((m) => {
-        if (!m || !m.emissive) return;
-        m.emissiveIntensity = damp(m.emissiveIntensity || 0.18, hitFlash, 18, dt);
+      // 5. Hit flash: brighten the whole rig briefly.
+      const hitFlash = s.isHit ? 1.5 : 0.18;
+      cloned.traverse((obj) => {
+        if (!obj.isMesh) return;
+        const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
+        mats.forEach((m) => {
+          if (!m || !m.emissive) return;
+          m.emissiveIntensity = damp(m.emissiveIntensity || 0.18, hitFlash, 18, dt);
+        });
       });
-    });
 
-    // 6. Sample pose from animationClips and apply to bones.
-    const anim = s.anim || 'idle';
-    const progress = s.animProgress || 0;
-    const time = performance.now() / 1000;
+      // 6. Sample pose from animationClips and apply to bones.
+      const anim = s.anim || 'idle';
+      const progress = s.animProgress || 0;
+      const time = performance.now() / 1000;
 
-    const sample = sampleClip(anim, progress);
-    const base = idlePose(time);
-    const pose = {};
-    for (const key of Object.keys(base)) {
-      if (key === 'hipY') {
-        pose[key] = base[key] + (sample.pose[key] || 0);
-      } else {
-        pose[key] = addDelta(base[key], sample.pose[key]);
+      const sample = sampleClip(anim, progress);
+      const base = idlePose(time);
+      const pose = {};
+      for (const key of Object.keys(base)) {
+        if (key === 'hipY') {
+          pose[key] = base[key] + (sample.pose[key] || 0);
+        } else {
+          pose[key] = addDelta(base[key], sample.pose[key]);
+        }
+      }
+      // Mirror for the opposite facing.
+      const finalPose = dir > 0 ? pose : mirrorPose(pose);
+
+      applyPoseToBones(finalPose, rig.boneMap, bonesRef.current, rootBoneRef.current, dt);
+
+      // 6b. Breathing / vertical bob. The pose's hipY is the desired
+      //     world-space height of the model above the ground. Applied
+      //     here on the modelGroup (world space) so the 0.01 GLB
+      //     internal scale doesn't interfere.
+      const breathY = finalPose.hipY || 0;
+      modelGroupRef.current.position.y = damp(
+        modelGroupRef.current.position.y,
+        breathY * 0.05, // small, in world meters
+        8,
+        dt
+      );
+
+      // 7. Backstep dust on landing.
+      if (
+        anim === 'backstep' &&
+        prevBackstepStateTimerRef.current > 0.13 &&
+        (s.stateTimer || 0) <= 0.13 &&
+        onBackstepLanding
+      ) {
+        onBackstepLanding([px, 0, pz]);
+      }
+      prevBackstepStateTimerRef.current = s.stateTimer || 0;
+      lastProgressRef.current = progress;
+
+      // 8. Register position for particle repelling.
+      registerFighterPosition(isPlayer ? 0 : 1, px, 0, pz);
+    } catch (err) {
+      // Surface any GLB / skeleton / pose runtime errors to the
+      // console so a "blank" canvas isn't a silent failure.
+      if (import.meta.env.DEV) {
+        console.error(`[GLBFighter ${isPlayer ? 'player' : 'opponent'}] useFrame error:`, err);
       }
     }
-    // Mirror for the opposite facing.
-    const finalPose = dir > 0 ? pose : mirrorPose(pose);
-
-    applyPoseToBones(finalPose, rig.boneMap, bonesRef.current, rootBoneRef.current, dt);
-
-    // 7. Backstep dust on landing.
-    if (
-      anim === 'backstep' &&
-      prevBackstepStateTimerRef.current > 0.13 &&
-      (s.stateTimer || 0) <= 0.13 &&
-      onBackstepLanding
-    ) {
-      onBackstepLanding([px, 0, pz]);
-    }
-    prevBackstepStateTimerRef.current = s.stateTimer || 0;
-    lastProgressRef.current = progress;
-
-    // 8. Register position for particle repelling.
-    registerFighterPosition(isPlayer, [px, 0, pz]);
   });
 
   return (

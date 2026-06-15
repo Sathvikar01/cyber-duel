@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
+import { useState, useCallback, useRef, useEffect, useMemo, Suspense } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { AnimatePresence } from 'framer-motion';
 import Game from './Game';
@@ -313,26 +313,34 @@ function App() {
           {buildVersion && <span style={{ opacity: 0.55, marginLeft: 6 }}>v{buildVersion}</span>}
         </div>
         {isMatchActive && (
-          <Canvas
-            key={gameKey}
-            shadows
-            camera={{ position: [0, 4, 12], fov: 50 }}
-            gl={{ antialias: true, alpha: false, powerPreference: 'high-performance' }}
-            dpr={[1, 2]}
-            frameloop="always"
+          <Suspense
+            fallback={
+              <div className="absolute inset-0 flex items-center justify-center bg-ink-900/80 text-amber-200 font-cinzel text-sm tracking-widest">
+                Loading fighters...
+              </div>
+            }
           >
-            <Game
-              ref={gameComponentRef}
-              arena={selectedArena}
-              playerCharacter={selectedCharacter}
-              npcCharacter={npcCharacter}
-              onGameOver={handleGameOver}
-              onRoundEnd={handleRoundEnd}
-              onPause={() => setPaused(true)}
-              paused={false}
-              modelReadyRef={modelReadyRef}
-            />
-          </Canvas>
+            <Canvas
+              key={gameKey}
+              shadows
+              camera={{ position: [0, 4, 12], fov: 50 }}
+              gl={{ antialias: true, alpha: false, powerPreference: 'high-performance' }}
+              dpr={[1, 2]}
+              frameloop="always"
+            >
+              <Game
+                ref={gameComponentRef}
+                arena={selectedArena}
+                playerCharacter={selectedCharacter}
+                npcCharacter={npcCharacter}
+                onGameOver={handleGameOver}
+                onRoundEnd={handleRoundEnd}
+                onPause={() => setPaused(true)}
+                paused={false}
+                modelReadyRef={modelReadyRef}
+              />
+            </Canvas>
+          </Suspense>
         )}
 
         {isMatchPaused && (
@@ -448,20 +456,28 @@ function App() {
 // overlay sits above it.
 function PausedCanvas({ arena, characters }) {
   return (
-    <Canvas
-      shadows={false}
-      camera={{ position: [0, 4, 12], fov: 50 }}
-      gl={{ antialias: true, alpha: false, powerPreference: 'low-power' }}
-      dpr={1}
-      frameloop="never"
+    <Suspense
+      fallback={
+        <div className="absolute inset-0 flex items-center justify-center bg-ink-900/80 text-amber-200 font-cinzel text-sm tracking-widest">
+          Loading fighters...
+        </div>
+      }
     >
-      <Game
-        arena={arena}
-        playerCharacter={characters[0]}
-        npcCharacter={characters[1]}
-        paused
-      />
-    </Canvas>
+      <Canvas
+        shadows={false}
+        camera={{ position: [0, 4, 12], fov: 50 }}
+        gl={{ antialias: true, alpha: false, powerPreference: 'low-power' }}
+        dpr={1}
+        frameloop="never"
+      >
+        <Game
+          arena={arena}
+          playerCharacter={characters[0]}
+          npcCharacter={characters[1]}
+          paused
+        />
+      </Canvas>
+    </Suspense>
   );
 }
 
