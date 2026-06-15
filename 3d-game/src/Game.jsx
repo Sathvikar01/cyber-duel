@@ -42,7 +42,7 @@ import {
   shouldPreventDefault,
 } from './combat/inputMap.js';
 
-import GLBFighter from './fighters/GLBFighter.jsx';
+import SilhouetteFighter from './fighters/SilhouetteFighter.jsx';
 import FightCamera from './camera/FightCamera.jsx';
 import ArenaPostFx from './arenas/components/ArenaPostFx.jsx';
 
@@ -83,27 +83,6 @@ function dist(a, b) {
   const dx = (a[0] || 0) - (b[0] || 0);
   const dz = (a[2] || 0) - (b[2] || 0);
   return Math.sqrt(dx * dx + dz * dz);
-}
-
-/**
- * Edge-to-edge distance between two fighters. Each fighter has a body
- * radius (the half-width of their silhouette / GLB mesh); the gap
- * between them is the center-to-center distance minus both radii.
- *
- * Used for all hit/resolution checks. Stops hits from landing when the
- * two bodies are visually touching.
- *
- * Body radius defaults to 0.45 which matches the silhouette
- * half-width (torsoW ~ 0.36..0.45 depending on fighter). For GLB
- * characters the fighter state can carry a custom radius read from
- * the model bounding box.
- */
-const DEFAULT_BODY_RADIUS = 0.45;
-function edgeDist(a, b, aRadius, bRadius) {
-  const center = dist(a, b);
-  const ar = aRadius != null ? aRadius : DEFAULT_BODY_RADIUS;
-  const br = bRadius != null ? bRadius : DEFAULT_BODY_RADIUS;
-  return Math.max(0, center - ar - br);
 }
 
 function createFighterState(config, isPlayer, startX) {
@@ -261,7 +240,7 @@ function Game(
       // Client-side fallback: tiny scripted policy.
       const p = playerRef.current;
       const n = npcRef.current;
-      const distance = edgeDist(p.position, n.position);
+      const distance = dist(p.position, n.position);
       const move = generateMockCounter(
         {
           anim: p.anim,
@@ -563,7 +542,7 @@ function Game(
     const inActive = localTime >= data.startup && localTime <= data.startup + data.active;
     if (!inActive) return;
 
-    const distance = edgeDist(attacker.position, defender.position);
+    const distance = dist(attacker.position, defender.position);
     const ctx = { comboCount: attacker.comboCount, defenderIsGrappled: defender.anim === 'clinched' };
 
     if (attacker.anim === 'clinch') {
@@ -589,7 +568,6 @@ function Game(
         move: attacker.anim,
         animProgress: attacker.animProgress,
         position: attacker.position,
-        facing: attacker.facing,
         isAttacking: attacker.isAttacking,
       },
       defender,
@@ -600,13 +578,6 @@ function Game(
     if (result.hit || result.blocked || result.parried) {
       attacker.hitConnected = true;
       applyHitResult(result, attacker, defender, isPlayerAttacker);
-    } else if (result.reason && import.meta.env.DEV) {
-      // Dev-only: surface why a hit missed so the realism changes are
-      // visible in the browser console. Production builds drop this
-      // branch entirely (import.meta.env.DEV is false).
-      console.debug(
-        `[combat] ${attacker.anim} missed: ${result.reason} (dist=${distance.toFixed(2)})`
-      );
     }
   }
 
@@ -988,14 +959,14 @@ function Game(
 
       {ArenaComponent && <ArenaComponent arena={arena} />}
 
-      <GLBFighter
+      <SilhouetteFighter
         stateRef={playerRef}
         character={playerCharacter}
         isPlayer
         onFootstep={onFootstep}
         onBackstepLanding={onBackstepLanding}
       />
-      <GLBFighter
+      <SilhouetteFighter
         stateRef={npcRef}
         character={npcCharacter}
         isPlayer={false}

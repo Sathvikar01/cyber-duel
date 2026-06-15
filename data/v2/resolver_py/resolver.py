@@ -94,16 +94,7 @@ def resolve_parry(attack: Dict[str, Any], defender: Dict[str, Any]) -> Dict[str,
     local_time = progress * total
     in_window = local_time >= p_data["startup"] and local_time <= p_data["startup"] + p_data["active"]
     if not in_window:
-        # Late/early parry becomes a normal hit. Use a distance inside
-        # the move's optimal range band so the new edge-to-edge range
-        # check doesn't false-reject the fallthrough hit.
-        data = MOVE_DATA.get(attack.get("move", ""))
-        fallthrough_distance = data.get("optimalRange", 2.0) if data else 2.0
-        return resolve_attack(
-            attack,
-            {**defender, "anim": "idle", "isBlocking": False},
-            fallthrough_distance, 0,
-        )
+        return resolve_attack(attack, {**defender, "anim": "idle", "isBlocking": False}, 0.0, 0.0)
     return {
         "hit": False, "parried": True,
         "staminaReward": COMBAT_CONFIG["parryStaminaReward"],
@@ -115,20 +106,8 @@ def resolve_parry(attack: Dict[str, Any], defender: Dict[str, Any]) -> Dict[str,
 
 def resolve_clinch(attacker: Dict[str, Any], defender: Dict[str, Any], distance: float = 0.0) -> Dict[str, Any]:
     data = MOVE_DATA["clinch"]
-    min_range = data.get("minRange", 0)
-    max_range = data.get("maxRange", data["range"])
-    if distance < min_range or distance > max_range:
+    if distance > data["range"]:
         return {"success": False, "reason": "out_of_range"}
-    # Facing check: attacker must be oriented toward the defender.
-    attacker_pos = attacker.get("position") if attacker else None
-    defender_pos = defender.get("position")
-    attacker_facing = attacker.get("facing") if attacker else None
-    if attacker_pos and defender_pos and attacker_facing is not None:
-        dx = defender_pos[0] - attacker_pos[0]
-        if dx != 0:
-            correct_side = (1 if dx > 0 else -1) == (1 if attacker_facing > 0 else -1)
-            if not correct_side:
-                return {"success": False, "reason": "wrong_facing"}
     if defender.get("anim") in GRAPPLE_MOVES:
         return {"success": False, "reason": "defender_occupied"}
     if defender.get("anim") in DEFENSIVE_MOVES:
@@ -144,20 +123,8 @@ def resolve_clinch(attacker: Dict[str, Any], defender: Dict[str, Any], distance:
 
 def resolve_throw(attacker: Dict[str, Any], defender: Dict[str, Any], distance: float = 0.0) -> Dict[str, Any]:
     data = MOVE_DATA["throw"]
-    min_range = data.get("minRange", 0)
-    max_range = data.get("maxRange", data["range"])
-    if distance < min_range or distance > max_range:
+    if distance > data["range"]:
         return {"success": False, "reason": "out_of_range"}
-    # Facing check.
-    attacker_pos = attacker.get("position") if attacker else None
-    defender_pos = defender.get("position")
-    attacker_facing = attacker.get("facing") if attacker else None
-    if attacker_pos and defender_pos and attacker_facing is not None:
-        dx = defender_pos[0] - attacker_pos[0]
-        if dx != 0:
-            correct_side = (1 if dx > 0 else -1) == (1 if attacker_facing > 0 else -1)
-            if not correct_side:
-                return {"success": False, "reason": "wrong_facing"}
     if defender.get("anim") == "backstep":
         return {"success": False, "reason": "evaded"}
     damage = data["damage"]
@@ -180,33 +147,8 @@ def resolve_attack(
     data = MOVE_DATA.get(attack.get("move", ""))
     if not data:
         return {"hit": False, "reason": "unknown_move"}
-    # Edge-to-edge range check (minRange..maxRange with damage falloff
-    # outside the optimal sweet spot). Mirrors the JS resolver.
-    min_range = data.get("minRange")
-    if min_range is None:
-        min_range = data["range"] * 0.3
-    max_range = data.get("maxRange")
-    if max_range is None:
-        max_range = data["range"]
-    if distance < min_range or distance > max_range:
+    if distance > data["range"]:
         return {"hit": False, "reason": "out_of_range"}
-    # Facing check: attacker must be oriented toward the defender.
-    attacker_pos = attack.get("position")
-    defender_pos = defender.get("position")
-    attacker_facing = attack.get("facing")
-    if attacker_pos and defender_pos and attacker_facing is not None:
-        dx = defender_pos[0] - attacker_pos[0]
-        if dx != 0:
-            correct_side = (1 if dx > 0 else -1) == (1 if attacker_facing > 0 else -1)
-            if not correct_side:
-                return {"hit": False, "reason": "wrong_facing"}
-    # Range-scale damage falloff. Optimal +/- 0.4 = full damage;
-    # outside that band = 80% damage.
-    range_scale = 1.0
-    optimal = data.get("optimalRange")
-    if optimal is not None:
-        if abs(distance - optimal) > 0.4:
-            range_scale = 0.8
     total = data["startup"] + data["active"] + data["recovery"]
     progress = attack.get("animProgress", 0) or 0
     local_time = progress * total
@@ -219,7 +161,7 @@ def resolve_attack(
         return resolve_parry(attack, defender)
     if defender.get("anim") == "backstep":
         return {"hit": False, "reason": "evaded"}
-    damage = float(data["damage"]) * range_scale
+    damage = float(data["damage"])
     counter_hit = is_counter_hit_vulnerable(defender, defender.get("anim", "idle"))
     if counter_hit:
         damage *= COMBAT_CONFIG["counterHitMultiplier"]
@@ -233,7 +175,7 @@ def resolve_attack(
     return {
         "hit": True, "damage": damage, "hpLeft": hp_left,
         "reaction": reaction, "knockback": data["knockback"],
-        "counterHit": counter_hit, "rangeScale": range_scale, "reason": "hit",
+        "counterHit": counter_hit, "reason": "hit",
     }
 
 

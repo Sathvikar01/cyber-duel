@@ -19,22 +19,6 @@
  *   - blockedShake: screen shake on block
  *   - anticipationWeight: how strong the wind-up is (0..1)
  *   - tags: optional metadata flags (heavy, low, grapple, evasive, etc.)
- *
- * Range fields (all edge-to-edge in world units, after the two fighter
- * body-radii are subtracted from the center-to-center distance):
- *   - minRange: closest gap at which the move can land. Below this the
- *     fist is still on the way / the attacker is too close to extend
- *     the limb. Hits register as "out_of_range" (clean miss).
- *   - optimalRange: sweet-spot gap; lands with full damage.
- *   - maxRange: farthest gap the move can reach. Above this the limb
- *     falls short. Hits register as "out_of_range".
- *   - range: kept as the maximum reach for backwards-compat with any
- *     system that reads it. Always equal to maxRange.
- *
- * Damage falloff: hits at the edge of maxRange (or just inside the
- * optimal band by more than 0.4 units) deal 80% damage. Sweet-spot
- * hits deal 100%. The falloff is applied in combatResolver.js and
- * returned as result.rangeScale.
  */
 
 export const PLAYER_MOVES = Object.freeze([
@@ -67,10 +51,7 @@ export const MOVE_DATA = Object.freeze({
   jab: {
     damage: 6,
     staminaCost: 8,
-    range: 3.0,
-    minRange: 1.6,
-    optimalRange: 2.2,
-    maxRange: 3.0,
+    range: 3.4,
     startup: 0.09,
     active: 0.06,
     recovery: 0.25,
@@ -89,10 +70,7 @@ export const MOVE_DATA = Object.freeze({
   cross: {
     damage: 10,
     staminaCost: 12,
-    range: 3.3,
-    minRange: 1.8,
-    optimalRange: 2.5,
-    maxRange: 3.3,
+    range: 4.0,
     startup: 0.12,
     active: 0.08,
     recovery: 0.30,
@@ -111,14 +89,11 @@ export const MOVE_DATA = Object.freeze({
   low_kick: {
     damage: 8,
     staminaCost: 10,
-    range: 3.4,
-    minRange: 1.9,
-    optimalRange: 2.7,
-    maxRange: 3.4,
+    range: 3.7,
     startup: 0.14,
     active: 0.10,
     recovery: 0.28,
-    cancelWindow: 0.32,
+    cancelWindow: 0.30,
     hitReaction: 'flinch',
     knockback: 0.30,
     attackerPushback: 0.04,
@@ -133,10 +108,7 @@ export const MOVE_DATA = Object.freeze({
   roundhouse: {
     damage: 14,
     staminaCost: 22,
-    range: 3.8,
-    minRange: 2.2,
-    optimalRange: 3.0,
-    maxRange: 3.8,
+    range: 4.4,
     startup: 0.24,
     active: 0.12,
     recovery: 0.44,
@@ -155,10 +127,7 @@ export const MOVE_DATA = Object.freeze({
   uppercut: {
     damage: 16,
     staminaCost: 24,
-    range: 2.6,
-    minRange: 1.4,
-    optimalRange: 1.9,
-    maxRange: 2.6,
+    range: 3.5,
     startup: 0.20,
     active: 0.10,
     recovery: 0.50,
@@ -177,37 +146,31 @@ export const MOVE_DATA = Object.freeze({
   // ----- Gemma-only counters / tools -----
   parry: {
     damage: 0,
-    staminaCost: 14,
-    range: 1.5,
-    minRange: 0,
-    optimalRange: 1.5,
-    maxRange: 2.5,
+    staminaCost: 10,
+    range: 0,
     startup: 0.05,
-    active: 0.20,
-    recovery: 0.20,
-    cancelWindow: 0.35,
+    active: 0.30,
+    recovery: 0.25,
+    cancelWindow: 0.0,
     hitReaction: 'none',
     knockback: 0,
     attackerPushback: 0,
-    hitstop: 0.02,
-    blockedHitstop: 0.02,
-    shake: 0.0,
-    blockedShake: 0.0,
+    hitstop: 0,
+    blockedHitstop: 0.06,
+    shake: 0,
+    blockedShake: 0.14,
     anticipationWeight: 0.10,
     tags: ['defensive', 'counter'],
   },
 
   backstep: {
     damage: 0,
-    staminaCost: 10,
+    staminaCost: 16,
     range: 0,
-    minRange: 0,
-    optimalRange: 0,
-    maxRange: 0,
-    startup: 0.05,
-    active: 0.18,
-    recovery: 0.12,
-    cancelWindow: 1.0,
+    startup: 0.0,
+    active: 0.28,
+    recovery: 0.20,
+    cancelWindow: 0.0,
     hitReaction: 'none',
     knockback: 0,
     attackerPushback: 0,
@@ -215,43 +178,37 @@ export const MOVE_DATA = Object.freeze({
     blockedHitstop: 0,
     shake: 0,
     blockedShake: 0,
-    anticipationWeight: 0.10,
-    tags: ['defensive', 'evasive'],
+    anticipationWeight: 0.0,
+    tags: ['defensive', 'evasive', 'iFrames'],
   },
 
   clinch: {
-    damage: 4,
-    staminaCost: 12,
-    range: 1.6,
-    minRange: 0.5,
-    optimalRange: 1.0,
-    maxRange: 1.6,
+    damage: 5,
+    staminaCost: 18,
+    range: 2.0,
     startup: 0.10,
-    active: 0.10,
-    recovery: 0.30,
-    cancelWindow: 0.4,
+    active: 0.16,
+    recovery: 0.24,
+    cancelWindow: 0.0,
     hitReaction: 'clinched',
     knockback: 0,
     attackerPushback: 0,
-    hitstop: 0.06,
-    blockedHitstop: 0.04,
-    shake: 0.15,
+    hitstop: 0.05,
+    blockedHitstop: 0.03,
+    shake: 0.18,
     blockedShake: 0.10,
     anticipationWeight: 0.20,
-    tags: ['grapple'],
+    tags: ['grapple', 'clinch'],
   },
 
   throw: {
-    damage: 22,
-    staminaCost: 20,
-    range: 1.8,
-    minRange: 0.6,
-    optimalRange: 1.1,
-    maxRange: 1.8,
-    startup: 0.10,
-    active: 0.10,
-    recovery: 0.40,
-    cancelWindow: 0.30,
+    damage: 18,
+    staminaCost: 26,
+    range: 2.2,
+    startup: 0.12,
+    active: 0.16,
+    recovery: 0.22,
+    cancelWindow: 0.0,
     hitReaction: 'fall',
     knockback: 1.40,
     attackerPushback: 0.05,
