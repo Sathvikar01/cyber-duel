@@ -39,8 +39,10 @@ export const XBOT_BONE_MAP = Object.freeze({
   foreR: { bone: 'mixamorigRightForeArm', type: 'rotation' },
   legL: { bone: 'mixamorigLeftUpLeg', type: 'rotation' },
   calfL: { bone: 'mixamorigLeftLeg', type: 'rotation' },
+  footL: { bone: 'mixamorigLeftFoot', type: 'rotation' },
   legR: { bone: 'mixamorigRightUpLeg', type: 'rotation' },
   calfR: { bone: 'mixamorigRightLeg', type: 'rotation' },
+  footR: { bone: 'mixamorigRightFoot', type: 'rotation' },
 });
 
 /**
@@ -107,8 +109,10 @@ export const ROBOT_BONE_MAP = Object.freeze({
   foreR: { bone: 'LowerArmR', type: 'rotation' },
   legL: { bone: 'UpperLegL', type: 'rotation' },
   calfL: { bone: 'LowerLegL', type: 'rotation' },
+  footL: { bone: 'FootL', type: 'rotation' },
   legR: { bone: 'UpperLegR', type: 'rotation' },
   calfR: { bone: 'LowerLegR', type: 'rotation' },
+  footR: { bone: 'FootR', type: 'rotation' },
 });
 
 /**

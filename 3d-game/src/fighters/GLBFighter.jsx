@@ -20,6 +20,149 @@ function damp(current, target, lambda, dt) {
   return current + (target - current) * (1 - Math.exp(-lambda * dt));
 }
 
+function clamp(value, min, max) {
+  return Math.max(min, Math.min(max, value));
+}
+
+const BACKSTEP_TOTAL = 0.35;
+const BACKSTEP_IFRAME_DURATION = 0.05;
+const BACKSTEP_RECOVERY_DURATION = 0.12;
+const BACKSTEP_RECOVERY_START = BACKSTEP_RECOVERY_DURATION;
+
+const LOCOMOTION_ANIMS = new Set(['idle', 'walk']);
+const GROUNDED_REACTIONS = new Set(['fall', 'knockdown', 'thrown']);
+const RAISED_ROOT_ANIMS = new Set(['uppercut', 'roundhouse', 'getup']);
+
+const NATIVE_CLIP_NAMES = {
+  idle: ['idle', 'Idle', 'Standing'],
+  walk: ['walk', 'Walk', 'Walking', 'run', 'Running'],
+};
+
+const STRIKE_IMPULSE = {
+  jab: 0.42,
+  cross: 0.62,
+  low_kick: 0.5,
+  roundhouse: 0.9,
+  uppercut: 0.86,
+  parry: 0.28,
+  clinch: 0.45,
+  throw: 0.78,
+};
+
+function getFighterPhysics(character) {
+  const stats = character?.stats || {};
+  const strength = stats.strength ?? stats.power ?? 60;
+  const speed = stats.speed ?? 60;
+  const defense = stats.defense ?? 55;
+  const configuredWeight = character?.physics?.weight;
+  const mass = configuredWeight || clamp(0.72 + strength / 180 + defense / 260 - speed / 420, 0.7, 1.45);
+  return {
+    mass,
+    response: clamp(15 / mass, 8, 22),
+    lean: clamp(1.35 / mass, 0.82, 1.55),
+    followThrough: clamp(0.74 + strength / 180, 0.82, 1.32),
+    footWidth: clamp((character?.bodyScale || 1) * 0.18, 0.14, 0.24),
+  };
+}
+
+function clipByNames(clips, names) {
+  return clips.find((clip) => names.some((name) => clip.name === name));
+}
+
+function stabilizedClip(clip) {
+  if (!clip) return null;
+  const tracks = clip.tracks.map((track) => {
+    const isRootPosition =
+      track.ValueTypeName === 'vector' &&
+      track.name.endsWith('.position') &&
+      /(mixamorigHips|Hips|Bone|Body)\.position$/.test(track.name);
+    if (!isRootPosition) return track;
+    const values = track.values.slice();
+    for (let i = 0; i < values.length; i += 3) {
+      values[i] = 0;
+      values[i + 2] = 0;
+    }
+    return new THREE.VectorKeyframeTrack(track.name, track.times, values);
+  });
+  return new THREE.AnimationClip(`${clip.name}_grounded`, clip.duration, tracks);
+}
+
+function poseCopy(pose) {
+  const out = {};
+  for (const [key, value] of Object.entries(pose)) {
+    out[key] = Array.isArray(value) ? [...value] : value;
+  }
+  return out;
+}
+
+function addRot(pose, key, delta) {
+  if (!pose[key]) pose[key] = [0, 0, 0];
+  pose[key][0] += delta[0] || 0;
+  pose[key][1] += delta[1] || 0;
+  pose[key][2] += delta[2] || 0;
+}
+
+function strikeImpulse(anim, progress) {
+  const amp = STRIKE_IMPULSE[anim] || 0;
+  if (!amp) return 0;
+  const t = clamp(progress || 0, 0, 1);
+  const windup = clamp(t / 0.18, 0, 1);
+  const release = 1 - clamp((t - 0.36) / 0.5, 0, 1);
+  return amp * Math.sin(windup * Math.PI * 0.5) * release;
+}
+
+function proceduralWeightFor(anim) {
+  return LOCOMOTION_ANIMS.has(anim) ? 0.26 : 1.0;
+}
+
+function bodyYOffset(anim, hipY) {
+  const dy = (hipY || 1) - 1;
+  if (GROUNDED_REACTIONS.has(anim)) return dy * 0.72;
+  if (anim === 'stumble' || anim === 'clinched') return dy * 0.28;
+  if (RAISED_ROOT_ANIMS.has(anim)) return dy * 0.18;
+  return dy * 0.018;
+}
+
+function enrichPoseWithPhysics(pose, physicsState) {
+  const p = poseCopy(pose);
+  const {
+    lean,
+    sway,
+    twist,
+    impactTilt,
+    strike,
+    idleWeight,
+    time,
+    facing,
+    speed,
+  } = physicsState;
+
+  const breath = Math.sin(time * 2.15) * 0.018 * idleWeight;
+  const scan = Math.sin(time * 0.85 + (facing > 0 ? 0 : Math.PI)) * 0.08 * idleWeight;
+  const shoulderCounter = clamp(speed * 0.012, 0, 0.12);
+
+  addRot(p, 'torso', [
+    impactTilt + lean + strike * 0.16 + breath,
+    twist + strike * 0.18,
+    sway,
+  ]);
+  addRot(p, 'head', [
+    -lean * 0.35 - impactTilt * 0.22,
+    scan - twist * 0.18,
+    -sway * 0.35,
+  ]);
+  addRot(p, 'armL', [strike * 0.04, 0, shoulderCounter - sway * 0.22]);
+  addRot(p, 'armR', [strike * 0.04, 0, -shoulderCounter - sway * 0.22]);
+  addRot(p, 'foreL', [-strike * 0.035, 0, 0]);
+  addRot(p, 'foreR', [-strike * 0.035, 0, 0]);
+  addRot(p, 'legL', [Math.max(0, -lean) * 0.12, 0, sway * 0.12]);
+  addRot(p, 'legR', [Math.max(0, -lean) * 0.12, 0, sway * 0.12]);
+  addRot(p, 'footL', [-lean * 0.12, 0, sway * 0.08]);
+  addRot(p, 'footR', [-lean * 0.12, 0, sway * 0.08]);
+
+  return p;
+}
+
 /**
  * Pick the right model URL + bone map for a fighter.
  *
@@ -52,6 +195,47 @@ function applyBoneScales(rootBone, fighterId) {
   const scales = FIGHTER_BONE_SCALES[fighterId] || FIGHTER_BONE_SCALES.ronin;
   if (!rootBone.userData) rootBone.userData = {};
   rootBone.userData.fighterScales = scales;
+
+  const groups = {
+    spineScale: [
+      'mixamorigSpine',
+      'mixamorigSpine1',
+      'mixamorigSpine2',
+      'Body',
+      'Abdomen',
+      'Torso_1',
+    ],
+    armScale: [
+      'mixamorigLeftArm',
+      'mixamorigLeftForeArm',
+      'mixamorigRightArm',
+      'mixamorigRightForeArm',
+      'UpperArmL',
+      'LowerArmL',
+      'UpperArmR',
+      'LowerArmR',
+    ],
+    legScale: [
+      'mixamorigLeftUpLeg',
+      'mixamorigLeftLeg',
+      'mixamorigRightUpLeg',
+      'mixamorigRightLeg',
+      'UpperLegL',
+      'LowerLegL',
+      'UpperLegR',
+      'LowerLegR',
+    ],
+    headScale: ['mixamorigHead', 'Head'],
+  };
+
+  for (const [scaleKey, boneNames] of Object.entries(groups)) {
+    const scale = scales[scaleKey];
+    if (!scale) continue;
+    for (const name of boneNames) {
+      const bone = rootBone.getObjectByName(name);
+      if (bone) bone.scale.set(scale[0], scale[1], scale[2]);
+    }
+  }
 }
 
 /**
@@ -78,6 +262,7 @@ export default function GLBFighter({
   stateRef,
   character,
   isPlayer = true,
+  onFootstep,
   onBackstepLanding,
 }) {
   const groupRef = useRef();
@@ -85,15 +270,61 @@ export default function GLBFighter({
   const bonesRef = useRef({});
   const rootBoneRef = useRef(null);
   const lastProgressRef = useRef(0);
+  const prevStrideRef = useRef(0);
+  const backstepDustTimerRef = useRef(0);
   const prevBackstepStateTimerRef = useRef(0);
+  const prevAnimProgressRef = useRef(0);
+  const prevPositionRef = useRef(new THREE.Vector3());
+  const leanRef = useRef(0);
+  const swayRef = useRef(0);
+  const twistRef = useRef(0);
+  const squashRef = useRef(0);
+  const mixerRef = useRef(null);
+  const nativeActionsRef = useRef({});
+  const nativeWeightsRef = useRef({});
 
   const rig = useMemo(() => pickRig(character, isPlayer), [character, isPlayer]);
   const gltf = useGLTF(rig.url);
+  const physics = useMemo(() => getFighterPhysics(character), [character]);
 
   const cloned = useMemo(() => {
     const c = SkeletonUtils.clone(gltf.scene);
     return c;
   }, [gltf]);
+
+  useEffect(() => {
+    if (!cloned || !gltf.animations?.length) return undefined;
+
+    const mixer = new THREE.AnimationMixer(cloned);
+    const actions = {};
+    const weights = {};
+
+    for (const [key, names] of Object.entries(NATIVE_CLIP_NAMES)) {
+      const source = clipByNames(gltf.animations, names);
+      if (!source) continue;
+      const clip = stabilizedClip(source);
+      const action = mixer.clipAction(clip);
+      action.setLoop(THREE.LoopRepeat, Infinity);
+      action.enabled = true;
+      action.clampWhenFinished = false;
+      action.play();
+      action.setEffectiveWeight(key === 'idle' ? 1 : 0);
+      actions[key] = action;
+      weights[key] = key === 'idle' ? 1 : 0;
+    }
+
+    mixerRef.current = mixer;
+    nativeActionsRef.current = actions;
+    nativeWeightsRef.current = weights;
+
+    return () => {
+      mixer.stopAllAction();
+      mixer.uncacheRoot(cloned);
+      mixerRef.current = null;
+      nativeActionsRef.current = {};
+      nativeWeightsRef.current = {};
+    };
+  }, [cloned, gltf.animations]);
 
   // Cache and apply rest-pose correction + bone lookup once per instance.
   useEffect(() => {
@@ -156,34 +387,52 @@ export default function GLBFighter({
     }
 
     // 4. Per-fighter bone scales.
-    const figId = (character && character.fighterId) || 'ronin';
+    const figId = character?.fighterId || (character?.id === 'champion' ? 'brute' : character?.id) || 'ronin';
     applyBoneScales(root, figId);
 
-    // 5. REPLACE materials entirely with MeshLambertMaterial. The GLB
-    //    ships with MeshStandardMaterial (PBR) which needs proper
-    //    lighting + environment maps to render visibly. The arena's
-    //    point lights don't reach the characters with enough intensity,
-    //    so the PBR materials were rendering as near-black (verified
-    //    via headless pixel sampling: center pixel was (58,0,0)).
-    //    MeshLambertMaterial has both color and emissive, responds
-    //    to basic light, and renders bright even with minimal lighting.
-    //    We preserve the GLB's textures and the character's accent
-    //    color as a strong emissive tint so each fighter reads as
-    //    Ronin (red), Monk (green), etc.
+    // 5. PBR materials. The GLB ships with MeshStandardMaterial, which is what
+    //    we want now that the arenas provide image-based lighting (IBL) via
+    //    drei <Environment>. The earlier downgrade to MeshLambertMaterial was a
+    //    workaround for the absence of IBL — with IBL present the PBR materials
+    //    render correctly with real reflections, roughness and indirect fill.
+    //
+    //    We rebuild each material from the GLB's original textures (albedo map,
+    //    normal/roughness/metal maps if present) and apply a per-character
+    //    accent tint as a subtle emissive so each fighter still reads as Ronin
+    //    (red), Monk (green), etc. without flattening to one flat color.
+    const accentThree = character && character.accentColor
+      ? new THREE.Color(character.accentColor)
+      : new THREE.Color(0x444444);
     cloned.traverse((obj) => {
       if (!obj.isMesh) return;
+      obj.castShadow = true;
+      obj.receiveShadow = true;
       const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
       const newMats = mats.map((m) => {
         if (!m) return m;
-        const tex = m.map || null;
-        return new THREE.MeshLambertMaterial({
-          color: 0xcccccc,
-          map: tex,
-          emissive: character && character.accentColor
-            ? new THREE.Color(character.accentColor)
-            : new THREE.Color(0x444444),
-          emissiveIntensity: 1.2,
+        const std = new THREE.MeshStandardMaterial({
+          color: 0xffffff,
+          map: m.map || null,
+          normalMap: m.normalMap || null,
+          roughnessMap: m.roughnessMap || null,
+          metalnessMap: m.metalnessMap || null,
+          // Sensible PBR defaults if the GLB doesn't carry roughness/metal.
+          roughness: 0.62,
+          metalness: 0.08,
+          // Faint accent emissive so each fighter reads in low light; the IBL
+          // does the heavy lifting, this is just a tonal hint.
+          emissive: accentThree,
+          emissiveIntensity: 0.08,
+          envMapIntensity: 1.0,
         });
+        // Preserve any alpha/transparency from the original material (hair,
+        // scarves, etc.).
+        if (m.transparent || (m.alphaMap !== undefined && m.alphaMap)) {
+          std.transparent = true;
+          std.alphaTest = m.alphaTest || 0;
+          std.alphaMap = m.alphaMap || null;
+        }
+        return std;
       });
       obj.material = newMats.length === 1 ? newMats[0] : newMats;
     });
@@ -196,12 +445,13 @@ export default function GLBFighter({
     }
   }, [cloned, character, isPlayer, rig]);
 
-  // Position update + facing flip + pose application.
+  // Position update + native/procedural pose application.
   useFrame((_state, dt) => {
     try {
       const s = stateRef.current;
       if (!s) return;
       if (!groupRef.current || !modelGroupRef.current) return;
+      const frameDt = Math.min(dt || 0.016, 0.05);
 
       // 1. Position (top-level group).
       const px = s.position?.[0] || 0;
@@ -209,46 +459,104 @@ export default function GLBFighter({
       const pz = s.position?.[2] || 0;
       groupRef.current.position.set(px, py, pz);
 
+      const prevPos = prevPositionRef.current;
+      const measuredVx = frameDt > 0 ? (px - prevPos.x) / frameDt : 0;
+      const measuredVz = frameDt > 0 ? (pz - prevPos.z) / frameDt : 0;
+      const vx = Number.isFinite(s.velX) ? s.velX : measuredVx;
+      const vz = Number.isFinite(s.velZ) ? s.velZ : measuredVz;
+      const speed = Math.sqrt(vx * vx + vz * vz);
+      prevPos.set(px, py, pz);
+
       // 2. Facing (horizontal flip on the model group). Damped to avoid
       //    popping on knockback-flip events.
       const dir = s.facing > 0 ? 1 : -1;
-      modelGroupRef.current.scale.x = damp(modelGroupRef.current.scale.x, dir, 14, dt);
-
-      // 3. Per-fighter body scale (1.0 default; brute/monk/assassin get
-      //    tweaks via FIGHTER_BONE_SCALES applied at mount, plus a uniform
-      //    bodyScale from the character config that scales everything).
       const bodyScale = (character && character.bodyScale) || 1.0;
-      const baseY = damp(modelGroupRef.current.scale.y, bodyScale, 8, dt);
-      const baseZ = damp(modelGroupRef.current.scale.z, bodyScale, 8, dt);
-      modelGroupRef.current.scale.y = baseY;
-      modelGroupRef.current.scale.z = baseZ;
-
-      // 4. Tilt: forward lean on attacker push-back, backward lean on hit.
-      const tiltX = (s.knockbackTilt || 0) - (s.attackerPushbackTilt || 0);
-      modelGroupRef.current.rotation.x = damp(
-        modelGroupRef.current.rotation.x,
-        tiltX,
-        12,
-        dt
+      const squashTarget = clamp(speed * 0.012 + (s.isHit ? 0.08 : 0), 0, 0.14);
+      squashRef.current = damp(squashRef.current, squashTarget, 12, frameDt);
+      modelGroupRef.current.scale.x = damp(
+        modelGroupRef.current.scale.x,
+        dir * bodyScale * (1 + squashRef.current * 0.1),
+        14,
+        frameDt
+      );
+      modelGroupRef.current.scale.y = damp(
+        modelGroupRef.current.scale.y,
+        bodyScale * (1 - squashRef.current * 0.08),
+        9,
+        frameDt
+      );
+      modelGroupRef.current.scale.z = damp(
+        modelGroupRef.current.scale.z,
+        bodyScale * (1 + squashRef.current * 0.06),
+        9,
+        frameDt
       );
 
-      // 5. Hit flash: brighten the whole rig briefly. Baseline 1.2
-      //    (matching the rest-pose tint above) so the accent emissive
-      //    keeps the character clearly visible against the dark arena
-      //    between hits. Flash bumps to 3.5 on hit.
-      const hitFlash = s.isHit ? 3.5 : 1.2;
+      // 3. Native GLB locomotion clips. We keep the imported idle/walk
+      //    animation alive for natural micro-motion, then layer combat poses
+      //    over the mapped bones below.
+      const anim = s.anim || 'idle';
+      const progress = s.animProgress || 0;
+      const actions = nativeActionsRef.current;
+      const nativeWeights = nativeWeightsRef.current;
+      const nativeTarget = anim === 'walk' && actions.walk ? 'walk' : 'idle';
+      const nativeBlend = LOCOMOTION_ANIMS.has(anim) ? 1 : 0.12;
+      for (const [key, action] of Object.entries(actions)) {
+        const targetWeight = key === nativeTarget ? nativeBlend : 0;
+        const nextWeight = damp(nativeWeights[key] ?? 0, targetWeight, 9, frameDt);
+        nativeWeights[key] = nextWeight;
+        action.enabled = nextWeight > 0.001;
+        action.setEffectiveWeight(nextWeight);
+        if (key === 'walk') action.timeScale = clamp(0.75 + speed * 0.16, 0.75, 1.65);
+        if (key === 'idle') action.timeScale = clamp(0.88 + (physics.mass - 1) * 0.1, 0.82, 1.08);
+      }
+      if (mixerRef.current) mixerRef.current.update(frameDt);
+
+      // 4. Velocity and impact physics. These are visual only; combat
+      //    positions still come from Game.jsx.
+      const forwardVel = vx * (s.facing || 1);
+      const targetLean = clamp(-forwardVel * 0.045 * physics.lean, -0.28, 0.24);
+      const targetSway = clamp(-vz * 0.04, -0.18, 0.18);
+      const targetTwist = clamp(forwardVel * 0.025 + strikeImpulse(anim, progress) * 0.16, -0.28, 0.32);
+      leanRef.current = damp(leanRef.current, targetLean, physics.response, frameDt);
+      swayRef.current = damp(swayRef.current, targetSway, physics.response * 0.8, frameDt);
+      twistRef.current = damp(twistRef.current, targetTwist, physics.response * 0.75, frameDt);
+
+      if (s.attackerPushbackTilt > 0) {
+        s.attackerPushbackTilt = Math.max(0, s.attackerPushbackTilt - 0.2 * frameDt / 0.15);
+      }
+      if (s.knockbackTilt > 0) {
+        s.knockbackTilt = Math.max(0, s.knockbackTilt - 0.25 * frameDt / 0.15);
+      }
+
+      const impactTilt = (s.attackerPushbackTilt || 0) - (s.knockbackTilt || 0);
+      modelGroupRef.current.rotation.x = damp(
+        modelGroupRef.current.rotation.x,
+        impactTilt * 0.3 + leanRef.current * 0.22,
+        12,
+        frameDt
+      );
+      modelGroupRef.current.rotation.z = damp(
+        modelGroupRef.current.rotation.z,
+        swayRef.current * 0.18,
+        10,
+        frameDt
+      );
+
+      // 5. Hit flash: spike the accent emissive briefly on impact. With PBR
+      //    the base emissive is a faint tint (0.08) and the IBL lights the
+      //    body normally; on a hit we punch it up so the struck area flares.
+      const hitFlash = s.isHit ? 1.6 : 0.08;
       cloned.traverse((obj) => {
         if (!obj.isMesh) return;
         const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
         mats.forEach((m) => {
           if (!m || !m.emissive) return;
-          m.emissiveIntensity = damp(m.emissiveIntensity || 1.2, hitFlash, 18, dt);
+          m.emissiveIntensity = damp(m.emissiveIntensity ?? 0.08, hitFlash, 18, frameDt);
         });
       });
 
       // 6. Sample pose from animationClips and apply to bones.
-      const anim = s.anim || 'idle';
-      const progress = s.animProgress || 0;
       const time = performance.now() / 1000;
 
       const sample = sampleClip(anim, progress);
@@ -263,37 +571,89 @@ export default function GLBFighter({
       }
       // Mirror for the opposite facing.
       const finalPose = dir > 0 ? pose : mirrorPose(pose);
+      const physicalPose = enrichPoseWithPhysics(finalPose, {
+        lean: leanRef.current,
+        sway: swayRef.current,
+        twist: twistRef.current,
+        impactTilt,
+        strike: strikeImpulse(anim, progress) * physics.followThrough,
+        idleWeight: anim === 'idle' ? 1 : 0,
+        time,
+        facing: dir,
+        speed,
+      });
 
-      applyPoseToBones(finalPose, rig.boneMap, bonesRef.current, rootBoneRef.current, dt);
-
-      // 6b. Breathing / vertical bob. The pose's hipY represents the
-      //     silhouette fighter's "ready stance" height; for the GLB
-      //     character we use it purely as a breathing oscillation
-      //     (~1 cm of world-space bob) so the rest pose stays anchored
-      //     at the correct floor height. The GLB's own Hips bone is
-      //     already at the right Y; we don't add any static offset.
-      const breathOsc = ((finalPose.hipY || 0) - 1.0) * 0.01; // ~1cm bob
-      modelGroupRef.current.position.y = damp(
-        modelGroupRef.current.position.y,
-        breathOsc,
-        8,
-        dt
+      applyPoseToBones(
+        physicalPose,
+        rig.boneMap,
+        bonesRef.current,
+        rootBoneRef.current,
+        frameDt,
+        proceduralWeightFor(anim)
       );
 
-      // 7. Backstep dust on landing.
+      // 6b. Visual root offsets: attack lunges, collapses, and breathing are
+      //     applied to the model group, not the authoritative combat state.
+      const rootOffset = sample.rootOffset || [0, 0, 0];
+      const visualX = (dir > 0 ? rootOffset[0] : -rootOffset[0]) * 0.62;
+      const visualY = bodyYOffset(anim, physicalPose.hipY) + (rootOffset[1] || 0) * 0.35;
+      const visualZ = (rootOffset[2] || 0) * 0.62;
+      modelGroupRef.current.position.x = damp(modelGroupRef.current.position.x, visualX, 13, frameDt);
+      modelGroupRef.current.position.y = damp(modelGroupRef.current.position.y, visualY, 10, frameDt);
+      modelGroupRef.current.position.z = damp(modelGroupRef.current.position.z, visualZ, 13, frameDt);
+
+      // 7. Footstep / landing events for ground VFX.
+      if (anim === 'walk') {
+        const stride = Math.sin((progress || 0) * Math.PI * 2);
+        const prevStride = prevStrideRef.current;
+        if (prevStride > 0 && stride <= 0) {
+          onFootstep?.([px - physics.footWidth * dir, 0.05, pz], { intensity: 1.0, type: 'walk' });
+        } else if (prevStride < 0 && stride >= 0) {
+          onFootstep?.([px + physics.footWidth * dir, 0.05, pz], { intensity: 1.0, type: 'walk' });
+        }
+        prevStrideRef.current = stride;
+      } else {
+        prevStrideRef.current = 0;
+      }
+
       if (
         anim === 'backstep' &&
-        prevBackstepStateTimerRef.current > 0.13 &&
-        (s.stateTimer || 0) <= 0.13 &&
+        s.stateTimer > 0 &&
+        s.stateTimer < BACKSTEP_TOTAL - BACKSTEP_IFRAME_DURATION
+      ) {
+        backstepDustTimerRef.current += frameDt;
+        if (backstepDustTimerRef.current >= 0.06) {
+          backstepDustTimerRef.current = 0;
+          onFootstep?.([px, 0.05, pz], { intensity: 0.6, type: 'slide' });
+        }
+      } else {
+        backstepDustTimerRef.current = 0;
+      }
+
+      if (
+        anim === 'backstep' &&
+        prevBackstepStateTimerRef.current >= BACKSTEP_RECOVERY_START &&
+        (s.stateTimer || 0) < BACKSTEP_RECOVERY_START &&
         onBackstepLanding
       ) {
-        onBackstepLanding([px, 0, pz]);
+        onBackstepLanding([px, 0.05, pz]);
       }
       prevBackstepStateTimerRef.current = s.stateTimer || 0;
+
+      if (GROUNDED_REACTIONS.has(anim)) {
+        const prevProgress = prevAnimProgressRef.current;
+        if (prevProgress < 0.65 && progress >= 0.65) {
+          onFootstep?.([px, 0.05, pz], { intensity: 1.4, type: 'landing' });
+        }
+        prevAnimProgressRef.current = progress;
+      } else {
+        prevAnimProgressRef.current = 0;
+      }
+
       lastProgressRef.current = progress;
 
       // 8. Register position for particle repelling.
-      registerFighterPosition(isPlayer ? 0 : 1, px, 0, pz);
+      registerFighterPosition(isPlayer ? 0 : 1, px, py, pz);
     } catch (err) {
       // Surface any GLB / skeleton / pose runtime errors to the
       // console so a "blank" canvas isn't a silent failure.
@@ -307,17 +667,11 @@ export default function GLBFighter({
     <group ref={groupRef}>
       <group ref={modelGroupRef}>
         <primitive object={cloned} />
-        {/* Key light parented to the model so it moves with the fighter
-            and isn't blocked by arena geometry. Bright directional
-            light from above + front so the PBR/Lambert materials
-            actually render visibly. */}
-        <directionalLight
-          position={[0, 4, 4]}
-          intensity={2.5}
-          color="#ffffff"
-        />
-        {/* Ambient fill so the dark side of the model isn't pure black. */}
-        <ambientLight intensity={0.6} color="#ffffff" />
+        {/* The per-fighter attached lights that used to live here have been
+            removed: the arenas now provide image-based lighting (drei
+            <Environment>) plus boosted key/rim lights, which is enough for the
+            PBR materials to read correctly from every angle without flattening
+            the shading with a follow-spot. */}
       </group>
     </group>
   );
@@ -328,22 +682,26 @@ export default function GLBFighter({
  * Uses damped lerp so combat animations interpolate smoothly even when
  * the active frames are short.
  */
-function applyPoseToBones(pose, boneMap, bones, _rootBone, dt) {
+function applyPoseToBones(pose, boneMap, bones, _rootBone, dt, weight = 1) {
   for (const [key, entry] of Object.entries(boneMap)) {
     const bone = bones[entry.bone];
     if (!bone) continue;
     const val = pose[key];
     if (entry.type === 'positionY') {
       const targetY = val;
-      bone.position.y = damp(bone.position.y, targetY, 10, dt);
+      const blendedY = bone.position.y + (targetY - bone.position.y) * weight;
+      bone.position.y = damp(bone.position.y, blendedY, 10, dt);
     } else if (entry.type === 'rotation') {
       if (!Array.isArray(val)) continue;
       const tx = val[0] || 0;
       const ty = val[1] || 0;
       const tz = val[2] || 0;
-      bone.rotation.x = damp(bone.rotation.x, tx, 18, dt);
-      bone.rotation.y = damp(bone.rotation.y, ty, 18, dt);
-      bone.rotation.z = damp(bone.rotation.z, tz, 18, dt);
+      const bx = bone.rotation.x + (tx - bone.rotation.x) * weight;
+      const by = bone.rotation.y + (ty - bone.rotation.y) * weight;
+      const bz = bone.rotation.z + (tz - bone.rotation.z) * weight;
+      bone.rotation.x = damp(bone.rotation.x, bx, 18, dt);
+      bone.rotation.y = damp(bone.rotation.y, by, 18, dt);
+      bone.rotation.z = damp(bone.rotation.z, bz, 18, dt);
     }
   }
 }

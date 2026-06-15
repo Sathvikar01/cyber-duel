@@ -238,6 +238,16 @@ if STATIC_DIR_EXISTS:
         "Expires": "0",
     }
 
+    @app.get("/models/{path:path}", include_in_schema=False)
+    async def game_models(path: str):
+        static_root = os.path.normpath(STATIC_DIR)
+        candidate = os.path.normpath(os.path.join(STATIC_DIR, "models", path))
+        if not candidate.startswith(static_root):
+            return HTMLResponse("Forbidden", status_code=403)
+        if os.path.isfile(candidate):
+            return FileResponse(candidate)
+        return HTMLResponse("Not Found", status_code=404)
+
     @app.get("/game", include_in_schema=False)
     @app.get("/game/", include_in_schema=False)
     async def game_index():
@@ -303,75 +313,69 @@ async def predict(request: Request):
 
 
 # ------------------------------------------------------------------
-# Gradio UI — full-screen game shell (used on HF Spaces only)
+# Gradio UI — full-screen game shell
 # ------------------------------------------------------------------
-# On HuggingFace Spaces the Gradio interface is required, but locally we
-# serve the React SPA directly to avoid fragile CSS / DOM hacks against
-# whatever class names the current Gradio version generates.
-ON_HF_SPACE = bool(os.environ.get("SPACE_ID") or os.environ.get("HF_SPACE"))
-
-if ON_HF_SPACE:
-    css = """
-    .gradio-container,.gradio-container>.main,.gradio-container>.main>.wrap,
-    .gradio-container .app,.gradio-container .container,.gradio-container .panel,
-    .gradio-container .gap,.gradio-container .column>.form {
-      background:#05040a!important;padding:0!important;margin:0!important;
-      max-width:none!important;width:100%!important;height:100%!important;
-      border:none!important;box-shadow:none!important;gap:0!important;
-    }
-    html,body,#root,.app,.gradio-container {
-      margin:0!important;padding:0!important;width:100%!important;
-      height:100%!important;overflow:hidden!important;background:#05040a!important;
-    }
-    #app_splash,.splash,.loading,.loader,.wrap.svelte-1ipelgc,
-    .svelte-1ipelgc,[class*="splash"],[class*="loader"],
-    progress,.progress,.progress-bar,.meta-loader,footer,.footer,
-    .gradio-footer,.built-with,#component-status,.meta,[class*="built-with"] {
-      display:none!important;visibility:hidden!important;opacity:0!important;
-      height:0!important;width:0!important;overflow:hidden!important;
-    }
-    .game-wrap {
-      position:fixed!important;inset:0!important;width:100vw!important;
-      height:100vh!important;padding:0!important;margin:0!important;
-      overflow:hidden!important;background:#05040a!important;z-index:2147483647;
-    }
-    .game-wrap iframe {
-      position:absolute!important;inset:0!important;width:100%!important;
-      height:100%!important;border:none!important;display:block!important;
-      background:#05040a!important;
-    }
-    """
-    with gr.Blocks(title="Duel of Albion", css=css, theme=gr.themes.Soft()) as demo:
-        if STATIC_DIR_EXISTS:
-            game_url = f"/game/?v={os.environ.get('BUILD_ID', int.from_bytes(os.urandom(2), 'big'))}"
-        else:
-            game_url = "/game"
-        with gr.Column(elem_classes="game-wrap"):
-            gr.HTML(
-                f'<iframe id="game-iframe" src="{game_url}" allowfullscreen '
-                'allow="autoplay; fullscreen; gamepad; xr-spatial-tracking" '
-                'sandbox="allow-scripts allow-same-origin allow-forms allow-popups" '
-                'style="background:#05040a;"></iframe>'
-            )
-    app = gr.mount_gradio_app(app, demo, path="/")
-    log.info("Mounted Gradio shell at / (HF Space mode).")
-else:
-    # Local dev: redirect root to the React SPA directly.
-    # No Gradio chrome, no iframe, no loading-button flash.
-    @app.get("/", include_in_schema=False)
-    async def root():
-        if STATIC_DIR_EXISTS:
-            v = os.environ.get('BUILD_ID', int.from_bytes(os.urandom(2), 'big'))
-            return RedirectResponse(url=f"/game/?v={v}")
-        return HTMLResponse(
-            "<h1 style='font-family:sans-serif;color:#f0e6d2;background:#05040a;"
-            "padding:40px;'>React game not built</h1>"
-            "<p style='font-family:sans-serif;color:#b8a88a;background:#05040a;"
-            "padding:0 40px 40px;'>Run <code>npm run build</code> in "
-            "<code>3d-game/</code> to produce the dist directory.</p>",
-            status_code=404,
+# The game is always served through a Gradio container. The React app is
+# embedded full-screen in an iframe so it keeps its own rendering / input
+# logic, while Gradio provides the hosting layer (HF Spaces, local, etc.).
+css = """
+/* Kill every Gradio container from html down — nothing should add
+   padding, margin, gaps, borders, or constrained height. */
+html,body,#root,.app,.gradio-container,
+.gradio-container>.main,.gradio-container>.main>.wrap,
+.gradio-container .column,.gradio-container .column>.form,
+.gradio-container [class*="container"],
+.gradio-container [class*="panel"],
+.gradio-container [class*="gap"] {
+  background:#05040a!important;
+  padding:0!important;margin:0!important;
+  max-width:none!important;width:100%!important;height:100%!important;
+  min-height:100vh!important;
+  border:none!important;box-shadow:none!important;gap:0!important;
+  overflow:hidden!important;
+}
+/* Hide all Gradio chrome: splash, footer, loader, status bar */
+#app_splash,.splash,.loading,.loader,
+.progress,.progress-bar,.meta-loader,
+footer,.footer,.gradio-footer,.built-with,
+#component-status,.meta,[class*="built-with"],
+[class*="splash"],[class*="loader"],
+.svelte-1ipelgc {
+  display:none!important;visibility:hidden!important;opacity:0!important;
+  height:0!important;width:0!important;overflow:hidden!important;
+}
+/* The Column with class game-wrap fills the viewport */
+.game-wrap,
+.game-wrap>.form {
+  position:fixed!important;inset:0!important;
+  width:100vw!important;height:100vh!important;
+  padding:0!important;margin:0!important;
+  overflow:hidden!important;background:#05040a!important;
+  z-index:2147483647;
+}
+/* The iframe itself is also fixed so it ignores any intermediate wrappers
+   Gradio may insert around gr.HTML */
+#game-iframe,.game-wrap iframe {
+  position:fixed!important;top:0!important;left:0!important;
+  width:100vw!important;height:100vh!important;
+  border:none!important;display:block!important;
+  background:#05040a!important;z-index:2147483647;
+}
+"""
+with gr.Blocks(title="Duel of Albion", css=css, theme=gr.themes.Soft()) as demo:
+    if STATIC_DIR_EXISTS:
+        game_url = f"/game/?v={os.environ.get('BUILD_ID', int.from_bytes(os.urandom(2), 'big'))}"
+    else:
+        game_url = "/game"
+    with gr.Column(elem_classes="game-wrap"):
+        gr.HTML(
+            f'<iframe id="game-iframe" src="{game_url}" allowfullscreen '
+            'allow="autoplay; fullscreen; gamepad; xr-spatial-tracking" '
+            'sandbox="allow-scripts allow-same-origin allow-forms allow-popups" '
+            'style="background:#05040a;"></iframe>'
         )
-    log.info("Local dev mode — serving React SPA at /game/, redirecting / → /game/.")
+app = gr.mount_gradio_app(app, demo, path="/")
+log.info("Mounted Gradio shell at /.")
 
 
 if __name__ == "__main__":

@@ -649,8 +649,132 @@ def rollout_rejection_sample(
     secrets=[modal.Secret.from_name("huggingface-token")],
     volumes={"/models": volume, "/data": data_volume},
 )
+def make_clean_dpo_pairs(
+    data_path: str = "v2/sft_v2.jsonl",
+    sft_adapter: str = "/models/sft",
+    model_id: str = "google/gemma-3-270m-it",
+    n_states: int = 6000,
+    batch_size: int = 8,
+    min_score_gap: float = 0.05,
+    out_path: str = "v2/dpo_clean.jsonl",
+):
+    """Build a clean (prompt, chosen, rejected) dataset where:
+        chosen   = resolver-optimal templated reasoning + counter_move
+        rejected = the SFT model's greedy output (which pattern-matches).
+    We pair only when the two answers differ (and by a meaningful reward
+    gap). All text is well-formed — no high-temperature sampling."""
+    import json
+    import torch
+    from peft import PeftModel
+    from transformers import AutoTokenizer, AutoModelForCausalLM
+
+    sys.path.insert(0, "/root")
+    from train.common import load_jsonl, format_prompt, parse_counter
+    from train.rewards import compute_reward
+    from data.v2.generate_data_v2 import (
+        State, build_assistant_turn, score_counter, SYSTEM_PROMPT,
+    )
+    from data.v2.resolver_py import FIGHTERS
+    from collections import Counter
+
+    rows = load_jsonl(f"/data/{data_path}")[:n_states]
+    print(f"Building clean DPO dataset from {len(rows)} states (greedy SFT vs resolver-optimal)")
+
+    tok = AutoTokenizer.from_pretrained(model_id, token=os.environ.get("HF_TOKEN"))
+    if tok.pad_token is None:
+        tok.pad_token = tok.eos_token
+    tok.padding_side = "left"
+
+    base = AutoModelForCausalLM.from_pretrained(
+        model_id, token=os.environ.get("HF_TOKEN"),
+        torch_dtype=torch.bfloat16, device_map="auto",
+    )
+    model = PeftModel.from_pretrained(base, sft_adapter)
+    model.eval()
+
+    out_rows: list = []
+    sft_move_counts: Counter = Counter()
+    optimal_move_counts: Counter = Counter()
+    disagree = 0
+    same = 0
+
+    for batch_start in range(0, len(rows), batch_size):
+        batch = rows[batch_start: batch_start + batch_size]
+        prompts = [format_prompt(r["system"], r["prompt"]) for r in batch]
+        inputs = tok(prompts, return_tensors="pt", padding=True,
+                     truncation=True, max_length=352).to(model.device)
+
+        with torch.no_grad():
+            sft_out = model.generate(
+                **inputs, max_new_tokens=160, do_sample=False,
+                pad_token_id=tok.pad_token_id,
+            )
+        prompt_len = inputs["input_ids"].shape[1]
+        for i, r in enumerate(batch):
+            sft_text = tok.decode(sft_out[i][prompt_len:], skip_special_tokens=True)
+            sft_move = parse_counter(sft_text)
+            prompt_text = prompts[i]
+
+            st = State(**r["state"])
+            legal = ("jab", "cross", "low_kick", "roundhouse", "uppercut",
+                     "parry", "backstep", "clinch", "throw")
+            scored = [(c, score_counter(st, c)) for c in legal]
+            scored.sort(key=lambda kv: -kv[1])
+            optimal_move, optimal_score = scored[0]
+
+            sft_move_counts[sft_move] += 1
+            optimal_move_counts[optimal_move] += 1
+
+            if optimal_move == sft_move:
+                same += 1
+                continue
+            disagree += 1
+            sft_score = compute_reward(sft_move, prompt_text)
+            if optimal_score - sft_score < min_score_gap:
+                continue
+
+            optimal_completion = build_assistant_turn(st, optimal_move)
+            out_rows.append({
+                "prompt": prompt_text,
+                "chosen": optimal_completion + "<end_of_turn>\n",
+                "rejected": sft_text + "<end_of_turn>\n",
+                "chosen_move": optimal_move,
+                "rejected_move": sft_move,
+                "chosen_score": float(optimal_score),
+                "rejected_score": float(sft_score),
+                "score_gap": float(optimal_score - sft_score),
+            })
+
+        if (batch_start // batch_size) % 20 == 0:
+            print(f"  {batch_start + len(batch)}/{len(rows)}"
+                  f"  pairs={len(out_rows)}  disagree={disagree}  same={same}")
+
+    out_file = Path(f"/data/{out_path}")
+    out_file.parent.mkdir(parents=True, exist_ok=True)
+    with out_file.open("w", encoding="utf-8") as f:
+        for r in out_rows:
+            f.write(json.dumps(r, ensure_ascii=False) + "\n")
+    print(f"\nSFT agrees with resolver: {same}/{len(rows)} ({100*same/len(rows):.1f}%)")
+    print(f"SFT disagrees: {disagree}/{len(rows)} ({100*disagree/len(rows):.1f}%)")
+    print(f"Wrote {len(out_rows)} pairs to {out_file}")
+    print(f"SFT move distribution: {dict(sft_move_counts.most_common())}")
+    print(f"Optimal move distribution: {dict(optimal_move_counts.most_common())}")
+    if out_rows:
+        import statistics
+        gaps = [r["score_gap"] for r in out_rows]
+        print(f"Score gap — mean: {statistics.mean(gaps):.3f}  median: {statistics.median(gaps):.3f}")
+    data_volume.commit()
+
+
+@app.function(
+    image=image,
+    gpu="L4",
+    timeout=2 * 3600,
+    secrets=[modal.Secret.from_name("huggingface-token")],
+    volumes={"/models": volume, "/data": data_volume},
+)
 def train_dpo_from_rollouts(
-    data_path: str = "v2/grpo_pairs.jsonl",
+    data_path: str = "v2/dpo_clean.jsonl",
     sft_adapter: str = "/models/sft",
     model_id: str = "google/gemma-3-270m-it",
     epochs: float = 1.0,
@@ -691,7 +815,6 @@ def train_dpo_from_rollouts(
         warmup_ratio=0.05,
         weight_decay=0.0,
         max_length=max_length,
-        max_prompt_length=max_length - 180,
         logging_steps=20,
         save_strategy="epoch",
         save_total_limit=1,
@@ -715,6 +838,140 @@ def train_dpo_from_rollouts(
     shutil.copytree("/checkpoints/dpo", out)
     print(f"DPO adapter saved to {out}")
     volume.commit()
+
+
+@app.function(
+    image=image,
+    gpu="L4",
+    timeout=10 * 60,
+    secrets=[modal.Secret.from_name("huggingface-token")],
+    volumes={"/models": volume, "/data": data_volume},
+)
+def test_dpo_inference(
+    adapter: str = "/models/dpo",
+    model_id: str = "google/gemma-3-270m-it",
+    n: int = 8,
+):
+    """Live inference test: generate 8 prompts that span the attribute matrix
+    (fast vs slow, heavy vs light, close vs far) and report the model's
+    counter_move + reward for each. Shows the DPO model is actually
+    attribute-aware (different character combos get different answers)."""
+    import json
+    import torch
+    from peft import PeftModel
+    from transformers import AutoTokenizer, AutoModelForCausalLM
+
+    sys.path.insert(0, "/root")
+    from train.common import format_prompt, parse_counter
+    from train.rewards import compute_reward
+    from data.v2.generate_data_v2 import State, build_user_prompt
+    from data.v2.resolver_py import FIGHTERS
+
+    tok = AutoTokenizer.from_pretrained(model_id, token=os.environ.get("HF_TOKEN"))
+    if tok.pad_token is None:
+        tok.pad_token = tok.eos_token
+    tok.padding_side = "left"
+
+    base = AutoModelForCausalLM.from_pretrained(
+        model_id, token=os.environ.get("HF_TOKEN"),
+        torch_dtype=torch.bfloat16, device_map="auto",
+    )
+    model = PeftModel.from_pretrained(base, adapter)
+    model.eval()
+
+    # A spectrum of state profiles to test attribute awareness
+    test_cases = [
+        {"name": "fast monk jab-spamming close",
+         "pc": "monk", "nc": "brute", "dist": "close", "ps": 100, "ns": 100, "r": 3,
+         "last5": ("jab","jab","jab","jab","jab")},
+        {"name": "slow brute jab-spamming close (same last5)",
+         "pc": "brute", "nc": "monk", "dist": "close", "ps": 100, "ns": 100, "r": 3,
+         "last5": ("jab","jab","jab","jab","jab")},
+        {"name": "heavy brute cross-spamming close",
+         "pc": "brute", "nc": "monk", "dist": "close", "ps": 100, "ns": 100, "r": 3,
+         "last5": ("cross","cross","cross","cross","cross")},
+        {"name": "fast monk cross-spamming close (same last5)",
+         "pc": "monk", "nc": "brute", "dist": "close", "ps": 100, "ns": 100, "r": 3,
+         "last5": ("cross","cross","cross","cross","cross")},
+        {"name": "fast monk roundhouse-spamming far",
+         "pc": "monk", "nc": "brute", "dist": "far", "ps": 100, "ns": 100, "r": 3,
+         "last5": ("roundhouse","roundhouse","roundhouse","roundhouse","roundhouse")},
+        {"name": "slow brute roundhouse-spamming far (same last5)",
+         "pc": "brute", "nc": "monk", "dist": "far", "ps": 100, "ns": 100, "r": 3,
+         "last5": ("roundhouse","roundhouse","roundhouse","roundhouse","roundhouse")},
+        {"name": "low-stamina fast monk (should punish with heavy)",
+         "pc": "monk", "nc": "brute", "dist": "close", "ps": 15, "ns": 100, "r": 3,
+         "last5": ("jab","low_kick","cross","jab","cross")},
+        {"name": "high-stamina fast monk (same)",
+         "pc": "monk", "nc": "brute", "dist": "close", "ps": 100, "ns": 100, "r": 3,
+         "last5": ("jab","low_kick","cross","jab","cross")},
+    ][:n]
+
+    results = []
+    for tc in test_cases:
+        pc = FIGHTERS[tc["pc"]]
+        nc = FIGHTERS[tc["nc"]]
+        state = State(
+            player_char_id=tc["pc"], npc_char_id=tc["nc"],
+            player_speed=pc["stats"]["speed"], player_power=pc["stats"]["power"],
+            player_range=pc["stats"]["range"], player_weight=pc["physics"]["weight"],
+            player_stance=pc["stance"],
+            npc_speed=nc["stats"]["speed"], npc_power=nc["stats"]["power"],
+            npc_range=nc["stats"]["range"], npc_weight=nc["physics"]["weight"],
+            npc_stance=nc["stance"],
+            distance_bucket=tc["dist"],
+            distance={"close": 1.5, "mid": 3.0, "far": 4.5}[tc["dist"]],
+            player_stamina=tc["ps"], npc_stamina=tc["ns"],
+            round=tc["r"], last5=tc["last5"], pattern="custom",
+        )
+        prompt = format_prompt("", build_user_prompt(state))
+        inputs = tok(prompt, return_tensors="pt").to(model.device)
+        with torch.no_grad():
+            out = model.generate(
+                **inputs, max_new_tokens=120, do_sample=False,
+                pad_token_id=tok.pad_token_id,
+            )
+        text = tok.decode(out[0][inputs["input_ids"].shape[1]:], skip_special_tokens=True)
+        move = parse_counter(text)
+        reward = compute_reward(move, prompt)
+        results.append({
+            "name": tc["name"],
+            "player": tc["pc"], "npc": tc["nc"],
+            "last5": ",".join(tc["last5"]),
+            "distance": tc["dist"],
+            "stamina": tc["ps"],
+            "counter_move": move,
+            "reward": float(reward),
+            "reasoning_snippet": text.split("\ncounter_move:")[0].strip()[-160:],
+        })
+
+    print("\n" + "=" * 80)
+    print("DPO MODEL — ATTRIBUTE-AWARE INFERENCE TEST")
+    print("=" * 80)
+    for r in results:
+        print(f"\n  Test: {r['name']}")
+        print(f"    player={r['player']}  npc={r['npc']}  dist={r['distance']}  stam={r['stamina']}")
+        print(f"    last5: {r['last5']}")
+        print(f"    → counter_move: {r['counter_move']}    reward: {r['reward']:+.3f}")
+        print(f"    reasoning: ...{r['reasoning_snippet']}")
+    print("\n" + "=" * 80)
+    print("KEY QUESTION: do identical last-5 + stamina produce different counter_moves")
+    print("for different (player_char, npc_char) combinations?")
+    print("=" * 80)
+    # Group by last5+stamina and check if answers differ across character pairs
+    from collections import defaultdict
+    by_state = defaultdict(list)
+    for r in results:
+        key = (r["last5"], r["stamina"], r["distance"])
+        by_state[key].append(r)
+    for key, group in by_state.items():
+        moves = [g["counter_move"] for g in group]
+        unique = set(moves)
+        print(f"\n  same last5+stam+dist → moves: {moves}  unique: {len(unique)}")
+        for g in group:
+            print(f"    {g['player']} vs {g['npc']}  →  {g['counter_move']}  (reward {g['reward']:+.3f})")
+
+    return results
 
 
 # ---------------------------------------------------------------------------

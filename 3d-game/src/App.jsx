@@ -1,11 +1,13 @@
 import { useState, useCallback, useRef, useEffect, useMemo, Suspense } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { AnimatePresence } from 'framer-motion';
+import * as THREE from 'three';
 import Game from './Game';
 import StartScreen from './ui/StartScreen';
 import CharacterSelectScreen from './ui/CharacterSelectScreen';
 import ArenaSelectScreen from './ui/ArenaSelectScreen';
 import HUD from './ui/HUD';
+import AdversaryIQ from './ui/AdversaryIQ';
 import DamageNumbers from './ui/DamageNumbers';
 import RoundOverlay from './ui/RoundOverlay';
 import GameOverScreen from './ui/GameOverScreen';
@@ -15,6 +17,11 @@ import { CodexOverlay, ForgeOverlay, SettingsOverlay } from './ui/StartScreenOve
 import { VfxProvider } from './vfx/VfxManager.jsx';
 import { CHARACTER_LIST, DEFAULT_CHARACTER } from './data/characterData.js';
 import { ARENA_LIST, DEFAULT_ARENA } from './data/arenaData.js';
+import {
+  getOrCreatePlayerId, startAdversaryProbes, stopAdversaryProbes,
+  setAdversaryState, buildPredictPayload, getAdversaryState,
+  onAdversaryStateChange, forgetMyAdapter,
+} from './onlineRl.js';
 import './App.css';
 
 function App() {
@@ -164,42 +171,59 @@ function App() {
     return () => clearInterval(interval);
   }, [gamePhase, addDamageNumber, triggerImpactFlash, triggerScreenShake, videoSettings.quality]);
 
-  // Expose Gradio AI request helper. In local dev (Vite serves the React app
-  // directly with no Gradio backend), we never make network calls so the HF
-  // Space's A10G is never woken. The client-side mock AI is used instead.
+  // Expose AI request helper. In local dev (Vite serves the React app
+  // directly with no Space backend), we never make network calls so the HF
+  // Space is never woken. The client-side mock AI is used instead.
   const isLocalDev = import.meta.env.DEV === true;
+  const playerIdRef = useRef('');
 
   useEffect(() => {
     if (isLocalDev) {
-      // Local dev: stub sendAIRequest to a no-op. Game.jsx's
-      // canCallModel check is false because modelReadyRef stays false.
       window.sendAIRequest = async () => {};
       return () => {
         window.sendAIRequest = undefined;
       };
     }
-    window.sendAIRequest = async (sequence) => {
+    // Mint (or re-use) a stable anonymous playerId and start probing /me
+    playerIdRef.current = getOrCreatePlayerId();
+    startAdversaryProbes(playerIdRef.current);
+    return () => stopAdversaryProbes();
+  }, [isLocalDev]);
+
+  useEffect(() => {
+    if (isLocalDev) return;
+    // Capture `playerId` from the ref so callers can always include it
+    const uid = playerIdRef.current;
+    window.sendAIRequest = async (request) => {
+      // Backwards-compat: callers used to pass a sequence string.
+      let payload;
+      if (typeof request === 'string') {
+        payload = { sequence: request, playerId: uid };
+      } else {
+        payload = { ...(request || {}), playerId: uid };
+      }
       try {
         const res = await fetch('/predict', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ sequence }),
+          body: JSON.stringify(payload),
         });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();
+        if (data && data.adapterScope) {
+          setAdversaryState({ adapterScope: data.adapterScope });
+        }
         window.dispatchEvent(new CustomEvent('ai-response', { detail: data }));
       } catch (err) {
         console.error('AI request failed:', err);
-        // A failed request implies the model is offline; fall back locally.
         modelReadyRef.current = false;
         window.dispatchEvent(
           new CustomEvent('ai-response', {
-            detail: { reasoning: err.message, counterMove: null, sequence },
+            detail: { reasoning: err.message, counterMove: null, sequence: payload.sequence || '' },
           })
         );
       }
     };
-
     return () => {
       window.sendAIRequest = undefined;
     };
@@ -327,6 +351,16 @@ function App() {
               gl={{ antialias: true, alpha: false, powerPreference: 'high-performance', preserveDrawingBuffer: true }}
               dpr={[1, 2]}
               frameloop="always"
+              // Cinematic renderer config. PBR materials + IBL need a controlled
+              // tone-mapping curve and exposure; leaving these at defaults makes
+              // the scene render either too dark (under-exposed) or washed out
+              // (no filmic shoulder). ACES Filmic with exposure ~1.1 gives the
+              // filmic highlight roll-off we want.
+              onCreated={({ gl }) => {
+                gl.toneMapping = THREE.ACESFilmicToneMapping;
+                gl.toneMappingExposure = 1.1;
+                gl.shadowMap.type = THREE.PCFSoftShadowMap;
+              }}
             >
               <Game
                 ref={gameComponentRef}
@@ -359,6 +393,10 @@ function App() {
             stamina={playerStamina}
             npcStamina={npcStamina}
           />
+        )}
+
+        {(gamePhase === 'playing' || gamePhase === 'roundEnd') && !paused && !isLocalDev && (
+          <AdversaryIQ />
         )}
 
         <DamageNumbers numbers={damageNumbers} />

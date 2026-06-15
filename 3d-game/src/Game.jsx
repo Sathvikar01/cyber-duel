@@ -7,7 +7,7 @@ import {
   useCallback,
 } from 'react';
 import { useFrame } from '@react-three/fiber';
-import { AdaptiveDpr } from '@react-three/drei';
+import { AdaptiveDpr, ContactShadows } from '@react-three/drei';
 
 import { MOVE_DATA, getMoveDuration } from './combat/moveData.js';
 import {
@@ -25,6 +25,9 @@ import {
 } from './combat/combatResolver.js';
 import {
   decideNPCAction,
+} from './combat/npcAI.js';
+import { buildPredictPayload } from './onlineRl.js';
+import {
   clampNPCPosition,
   resetAI,
   NPC_STATES,
@@ -257,6 +260,9 @@ function Game(
     const lastFive = history.slice(-5);
     if (lastFive.length === 0) lastFive.push(playerRef.current.anim);
     const sequence = lastFive.join(',');
+    const playerPrevMove = history.length > 1
+      ? history[history.length - 1]
+      : '';
 
     const modelReady = modelReadyRef?.current === true;
     const canCallModel = modelReady && typeof window.sendAIRequest === 'function';
@@ -282,8 +288,21 @@ function Game(
     }
 
     requestInFlightRef.current = true;
+    const p = playerRef.current;
+    const n = npcRef.current;
+    const distance = edgeDist(p.position, n.position);
+    const payload = buildPredictPayload({
+      sequence,
+      playerCharacterId: playerCharacter?.id,
+      npcCharacterId: npcCharacter?.id,
+      round: gameRef.current.round,
+      distance,
+      playerPrevMove,
+      playerStamina: p.stamina,
+      npcStamina: n.stamina,
+    });
     window
-      .sendAIRequest(sequence)
+      .sendAIRequest(payload)
       .finally(() => {
         requestInFlightRef.current = false;
       });

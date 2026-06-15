@@ -30,6 +30,10 @@ const EASES = {
 
 const ID = idlePose(0);
 
+function zeroDelta(value) {
+  return Array.isArray(value) ? [0, 0, 0] : 0;
+}
+
 function delta(pose) {
   const out = {};
   for (const key of Object.keys(ID)) {
@@ -38,7 +42,7 @@ function delta(pose) {
         ? [pose[key][0] - ID[key][0], pose[key][1] - ID[key][1], pose[key][2] - ID[key][2]]
         : pose[key] - ID[key];
     } else {
-      out[key] = Array.isArray(ID[key]) ? [...ID[key]] : ID[key];
+      out[key] = zeroDelta(ID[key]);
     }
   }
   return out;
@@ -66,6 +70,7 @@ export const CLIPS = {
       armR: d([0.5, 0, -0.4]), foreR: d([-1.2, 0, 0]),
       legL: d([-0.15, 0, 0.08]), calfL: d([0.15, 0, 0]),
       legR: d([0.15, 0, -0.08]), calfR: d([0.1, 0, 0]),
+      footL: d([0.04, 0, 0.02]), footR: d([0.04, 0, -0.02]),
     }),
   ],
 
@@ -84,6 +89,7 @@ export const CLIPS = {
       // Left leg forward + right leg back.
       legL: d([-0.7, 0, 0.05]), calfL: d([0.55, 0, 0]),
       legR: d([0.7, 0, -0.05]), calfR: d([0.1, 0, 0]),
+      footL: d([0.18, 0, 0.03]), footR: d([-0.16, 0, -0.04]),
       // Arms counter-swing: right arm forward.
       armL: d([0.7, 0, 0.4]), foreL: d([-1.2, 0, 0]),
       armR: d([0.3, 0, -0.4]), foreR: d([-1.2, 0, 0]),
@@ -95,6 +101,7 @@ export const CLIPS = {
       // Right leg forward + left leg back.
       legL: d([0.7, 0, 0.05]), calfL: d([0.1, 0, 0]),
       legR: d([-0.7, 0, -0.05]), calfR: d([0.55, 0, 0]),
+      footL: d([-0.16, 0, 0.04]), footR: d([0.18, 0, -0.03]),
       // Arms counter-swing: left arm forward.
       armL: d([0.3, 0, 0.4]), foreL: d([-1.2, 0, 0]),
       armR: d([0.7, 0, -0.4]), foreR: d([-1.2, 0, 0]),
@@ -117,15 +124,15 @@ export const CLIPS = {
 
   low_kick: [
     ph(0, 0.2, { hipY: 0.95, torso: d([-0.05, -0.1, 0]), legR: d([0.15, 0, -0.08]), calfR: d([0.1, 0, 0]) }, { ease: 'inQuad' }),
-    ph(0.2, 0.45, { hipY: 0.98, torso: d([-0.25, -0.2, 0]), legR: d([-1.4, 0, 0.4]), calfR: d([0.3, 0, 0]) }, { rootOffset: [0.15, 0, 0], ease: 'strike' }),
-    ph(0.45, 0.65, { hipY: 0.98, torso: d([-0.25, -0.2, 0]), legR: d([-1.4, 0, 0.4]), calfR: d([0.3, 0, 0]) }, { rootOffset: [0.15, 0, 0], ease: 'hold' }),
+    ph(0.2, 0.45, { hipY: 0.98, torso: d([-0.25, -0.2, 0]), legR: d([-1.4, 0, 0.4]), calfR: d([0.3, 0, 0]), footR: d([0.48, 0, 0.16]) }, { rootOffset: [0.15, 0, 0], ease: 'strike' }),
+    ph(0.45, 0.65, { hipY: 0.98, torso: d([-0.25, -0.2, 0]), legR: d([-1.4, 0, 0.4]), calfR: d([0.3, 0, 0]), footR: d([0.48, 0, 0.16]) }, { rootOffset: [0.15, 0, 0], ease: 'hold' }),
     ph(0.65, 1.0, { hipY: 1.0, torso: d([0, 0, 0]), legR: d([0.15, 0, -0.08]), calfR: d([0.1, 0, 0]) }, { ease: 'recovery' }),
   ],
 
   roundhouse: [
     ph(0, 0.2, { hipY: 1.05, torso: d([0, -0.2, 0]), legL: d([-0.5, 0, 0.3]), calfL: d([0.4, 0, 0]), armL: d([0.7, 0, 0.6]), armR: d([0.7, 0, -0.6]) }, { ease: 'inCubic' }),
-    ph(0.2, 0.45, { hipY: 1.25, torso: d([-0.3, -1.8, 0]), legL: d([-1.4, -0.6, -1.2]), calfL: d([0, 0, 0]), armL: d([0.8, 0, 0.8]), armR: d([0.8, 0, -0.8]) }, { rootOffset: [0.05, 0, 0], ease: 'strike' }),
-    ph(0.45, 0.7, { hipY: 1.25, torso: d([-0.3, -1.8, 0]), legL: d([-1.4, -0.6, -1.2]), calfL: d([0, 0, 0]), armL: d([0.8, 0, 0.8]), armR: d([0.8, 0, -0.8]) }, { rootOffset: [0.05, 0, 0], ease: 'hold' }),
+    ph(0.2, 0.45, { hipY: 1.25, torso: d([-0.3, -1.8, 0]), legL: d([-1.4, -0.6, -1.2]), calfL: d([0, 0, 0]), footL: d([0.28, -0.25, -0.35]), armL: d([0.8, 0, 0.8]), armR: d([0.8, 0, -0.8]) }, { rootOffset: [0.05, 0, 0], ease: 'strike' }),
+    ph(0.45, 0.7, { hipY: 1.25, torso: d([-0.3, -1.8, 0]), legL: d([-1.4, -0.6, -1.2]), calfL: d([0, 0, 0]), footL: d([0.28, -0.25, -0.35]), armL: d([0.8, 0, 0.8]), armR: d([0.8, 0, -0.8]) }, { rootOffset: [0.05, 0, 0], ease: 'hold' }),
     ph(0.7, 1.0, { hipY: 1.0, torso: d([0, 0, 0]), legL: d([-0.15, 0, 0.08]), calfL: d([0.15, 0, 0]), armL: d([0.5, 0, 0.4]), armR: d([0.5, 0, -0.4]) }, { ease: 'recovery' }),
   ],
 
@@ -160,6 +167,12 @@ export const CLIPS = {
     ph(0.7, 1.0, { hipY: 1.0, torso: d([0, 0, 0]), armL: d([0.5, 0, 0.4]), foreL: d([-1.2, 0, 0]), armR: d([0.5, 0, -0.4]), foreR: d([-1.2, 0, 0]) }, { ease: 'recovery' }),
   ],
 
+  clinched: [
+    ph(0, 0.25, { hipY: 0.96, torso: d([0.12, 0.18, 0.04]), head: d([0.12, 0, 0.02]), armL: d([0.05, 0, 0.64]), foreL: d([-0.75, 0, 0]), armR: d([0.05, 0, -0.64]), foreR: d([-0.75, 0, 0]), legL: d([-0.22, 0, 0.08]), calfL: d([0.28, 0, 0]), legR: d([0.22, 0, -0.08]), calfR: d([0.28, 0, 0]) }, { rootOffset: [-0.08, 0, 0], ease: 'outQuad' }),
+    ph(0.25, 0.85, { hipY: 0.92, torso: d([0.16, 0.28, 0.06]), head: d([0.16, 0.05, 0.02]), armL: d([-0.18, 0, 0.72]), foreL: d([-0.62, 0, 0]), armR: d([-0.18, 0, -0.72]), foreR: d([-0.62, 0, 0]), legL: d([-0.28, 0, 0.08]), calfL: d([0.34, 0, 0]), legR: d([0.28, 0, -0.08]), calfR: d([0.34, 0, 0]) }, { rootOffset: [-0.12, 0, 0], ease: 'hold' }),
+    ph(0.85, 1.0, { hipY: 0.96, torso: d([0.08, 0.12, 0.03]), head: d([0.1, 0, 0]), armL: d([0.16, 0, 0.58]), foreL: d([-0.85, 0, 0]), armR: d([0.16, 0, -0.58]), foreR: d([-0.85, 0, 0]) }, { ease: 'recovery' }),
+  ],
+
   throw: [
     ph(0, 0.25, { hipY: 1.0, torso: d([0, -0.2, 0]), armL: d([0.6, 0, 0.5]), foreL: d([-1.1, 0, 0]), armR: d([0.6, 0, -0.5]), foreR: d([-1.1, 0, 0]) }, { rootOffset: [0.1, 0, 0], ease: 'inQuad' }),
     ph(0.25, 0.5, { hipY: 1.1, torso: d([0, -0.6, 0]), armL: d([-0.8, 0, 0.6]), foreL: d([-0.4, 0, 0]), armR: d([-0.8, 0, -0.6]), foreR: d([-0.4, 0, 0]) }, { rootOffset: [0.35, 0, 0], ease: 'strike' }),
@@ -189,6 +202,12 @@ export const CLIPS = {
     ph(0, 0.25, { hipY: 0.9, torso: d([0.2, 0.3, -0.2]), head: d([0.4, 0, 0.2]), armL: d([1.0, 0, 0.8]), foreL: d([-0.3, 0, 0]), armR: d([1.0, 0, -0.8]), foreR: d([-0.3, 0, 0]) }, { rootOffset: [-0.2, 0, 0], ease: 'outQuad' }),
     ph(0.25, 0.6, { hipY: 0.25, torso: d([-0.4, 0.5, -0.3]), head: d([0.5, 0, 0.3]), armL: d([1.2, 0, 0.9]), foreL: d([0, 0, 0]), armR: d([1.2, 0, -0.9]), foreR: d([0, 0, 0]), legL: d([-0.7, 0, 0.08]), calfL: d([0.7, 0, 0]), legR: d([0.7, 0, -0.08]), calfR: d([0.7, 0, 0]) }, { rootOffset: [-0.7, 0, 0], ease: 'outCubic' }),
     ph(0.6, 1.0, { hipY: 0.2, torso: d([-0.4, 0.5, -0.3]), head: d([0.5, 0, 0.3]), armL: d([1.2, 0, 0.9]), foreL: d([0, 0, 0]), armR: d([1.2, 0, -0.9]), foreR: d([0, 0, 0]), legL: d([-0.7, 0, 0.08]), calfL: d([0.7, 0, 0]), legR: d([0.7, 0, -0.08]), calfR: d([0.7, 0, 0]) }, { rootOffset: [-0.7, 0, 0], ease: 'hold' }),
+  ],
+
+  fall: [
+    ph(0, 0.18, { hipY: 0.88, torso: d([0.35, 0.16, -0.14]), head: d([0.35, 0, 0.18]), armL: d([0.95, 0, 0.78]), foreL: d([-0.38, 0, 0]), armR: d([0.95, 0, -0.78]), foreR: d([-0.38, 0, 0]), legL: d([-0.4, 0, 0.08]), calfL: d([0.45, 0, 0]), legR: d([0.38, 0, -0.08]), calfR: d([0.45, 0, 0]) }, { rootOffset: [-0.15, 0, 0], ease: 'outQuad' }),
+    ph(0.18, 0.65, { hipY: 0.14, torso: d([1.5, 0.28, -0.28]), head: d([0.45, 0, 0.24]), armL: d([1.18, 0, 0.95]), foreL: d([-0.08, 0, 0]), armR: d([1.18, 0, -0.95]), foreR: d([-0.08, 0, 0]), legL: d([-0.62, 0, 0.08]), calfL: d([0.72, 0, 0]), legR: d([0.58, 0, -0.08]), calfR: d([0.72, 0, 0]), footL: d([-0.22, 0, 0.12]), footR: d([-0.22, 0, -0.12]) }, { rootOffset: [-0.82, 0, 0], ease: 'outCubic' }),
+    ph(0.65, 1.0, { hipY: 0.12, torso: d([1.45, 0.22, -0.24]), head: d([0.36, 0, 0.18]), armL: d([1.08, 0, 0.86]), foreL: d([-0.12, 0, 0]), armR: d([1.08, 0, -0.86]), foreR: d([-0.12, 0, 0]), legL: d([-0.52, 0, 0.08]), calfL: d([0.62, 0, 0]), legR: d([0.5, 0, -0.08]), calfR: d([0.62, 0, 0]), footL: d([-0.18, 0, 0.1]), footR: d([-0.18, 0, -0.1]) }, { rootOffset: [-0.82, 0, 0], ease: 'hold' }),
   ],
 
   getup: [

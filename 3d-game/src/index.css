@@ -316,7 +316,11 @@ html, body, #root {
 .gpu-idle *::before,
 .gpu-idle *::after {
   animation-play-state: paused !important;
-  transition: none !important;
+  /* NOTE: we no longer disable transitions in idle mode. Framer-motion menu
+     screens (start, character select, arena select, game over) animate from
+     opacity 0 to 1 via transitions; disabling transitions left them stuck
+     invisible, producing a blank screen when GPU is idle. Pausing keyframe
+     animations is enough to stop continuous GPU work. */
 }
 
 .gpu-idle .ember-layer,

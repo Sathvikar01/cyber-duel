@@ -41,6 +41,8 @@ export function idlePose(time) {
     calfL: [0.15, 0, 0],
     legR: [0.15, 0, -0.08],
     calfR: [0.1, 0, 0],
+    footL: [0.04, 0, 0.02],
+    footR: [0.04, 0, -0.02],
   };
 }
 
@@ -63,5 +65,7 @@ export function mirrorPose(pose) {
     calfL: mirrorRot(pose.calfR),
     legR: mirrorRot(pose.legL),
     calfR: mirrorRot(pose.calfL),
+    footL: mirrorRot(pose.footR),
+    footR: mirrorRot(pose.footL),
   };
 }

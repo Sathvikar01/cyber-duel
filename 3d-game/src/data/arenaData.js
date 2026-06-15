@@ -35,6 +35,8 @@ export const ARENA_LIST = [
         ambient: { intensity: 0.16, color: '#2a1a0c' },
         key: { position: [2, 12, 6], intensity: 0.45, color: '#d4af37', castShadow: true, flickerSeed: 0 },
         rim: { position: [-6, 6, -8], intensity: 0.6, color: '#e71d36', flickerSeed: 1.7 },
+        // Warm torch-lit temple — drei CC0 HDRI preset, no download.
+        environment: { preset: 'warehouse', intensity: 0.35, background: false },
       },
       beams: [
         { position: [-4, 14, 2], targetY: 0, color: '#ffae3b', width: 2.0, intensity: 0.7, animated: true },
@@ -132,6 +134,8 @@ export const ARENA_LIST = [
         ambient: { intensity: 0.22, color: '#8fbc8f' },
         key: { position: [-6, 12, 8], intensity: 0.55, color: '#d4e8c5', castShadow: true, flickerSeed: 1 },
         rim: { position: [8, 6, -10], intensity: 0.45, color: '#adff2f', flickerSeed: 2.4 },
+        // Cool moonlit grove — drei CC0 HDRI preset, no download.
+        environment: { preset: 'forest', intensity: 0.4, background: false },
       },
       beams: [
         { position: [0, 13, -3], targetY: 0, color: '#d4e8c5', width: 2.4, intensity: 0.55, animated: true },
@@ -227,6 +231,8 @@ export const ARENA_LIST = [
         ambient: { intensity: 0.2, color: '#b45a2b' },
         key: { position: [-8, 12, 12], intensity: 0.7, color: '#ffdb9a', castShadow: true, flickerSeed: 2 },
         rim: { position: [10, 6, -10], intensity: 0.45, color: '#ff7b2e', flickerSeed: 3.3 },
+        // Dusty sunlit arena — drei CC0 HDRI preset, no download.
+        environment: { preset: 'sunset', intensity: 0.45, background: false },
       },
       beams: [
         { position: [0, 14, -1], targetY: 0, color: '#ff9d3e', width: 3.0, intensity: 0.75, animated: true },
@@ -323,6 +329,8 @@ export const ARENA_LIST = [
         ambient: { intensity: 0.18, color: '#4a7a9a' },
         key: { position: [6, 12, 8], intensity: 0.5, color: '#b8dfff', castShadow: true, flickerSeed: 3 },
         rim: { position: [-8, 6, -10], intensity: 0.5, color: '#6ecfff', flickerSeed: 4.1 },
+        // Cold blue night — drei CC0 HDRI preset, no download.
+        environment: { preset: 'night', intensity: 0.3, background: false },
       },
       beams: [
         { position: [0, 12, -16], targetY: 0, color: '#6ecfff', width: 2.2, intensity: 0.55, animated: true },
