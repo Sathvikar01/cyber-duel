@@ -1,0 +1,16 @@
+{
+  "name": "duel-of-albion",
+  "private": true,
+  "version": "0.1.0",
+  "description": "A 2.5D silhouette fighting game with a Gemma-3 AI opponent, served as a Gradio app on Hugging Face Spaces.",
+  "scripts": {
+    "dev": "cd 3d-game && npm run dev",
+    "build": "cd 3d-game && npm run build",
+    "build:watch": "cd 3d-game && npm run build -- --watch",
+    "lint": "cd 3d-game && npm run lint",
+    "preview": "cd 3d-game && npm run preview",
+    "install:web": "cd 3d-game && npm install",
+    "serve:gradio": "python app.py",
+    "start:gradio": "npm run build && npm run serve:gradio"
+  }
+}

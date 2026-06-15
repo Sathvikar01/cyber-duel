@@ -1,5 +1,6 @@
 fastapi
 uvicorn
+gradio>=5.0.0
 huggingface_hub
 transformers
 torch

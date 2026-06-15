@@ -1,0 +1,37 @@
+/**
+ * Optional CSS helpers for the 2.5D silhouette look.
+ *
+ * These variables and utility classes can be used by UI screens (character
+ * select, HUD, etc.) to stay visually consistent with the in-game fighters.
+ */
+
+:root {
+  --silhouette-body: #07070a;
+  --silhouette-shadow: rgba(0, 0, 0, 0.45);
+}
+
+.silhouette-fighter-card {
+  background: linear-gradient(180deg, rgba(7, 7, 10, 0.92), rgba(5, 4, 10, 0.98));
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.5);
+}
+
+.silhouette-accent-glow {
+  filter: drop-shadow(0 0 6px currentColor);
+}
+
+.silhouette-flash {
+  animation: silhouette-hit-flash 0.15s ease-out;
+}
+
+@keyframes silhouette-hit-flash {
+  0% {
+    filter: brightness(1);
+  }
+  30% {
+    filter: brightness(2.5) saturate(1.4);
+  }
+  100% {
+    filter: brightness(1);
+  }
+}
