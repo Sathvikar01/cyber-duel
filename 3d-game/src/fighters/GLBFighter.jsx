@@ -248,7 +248,7 @@ export default function GLBFighter({
     lastProgressRef.current = progress;
 
     // 8. Register position for particle repelling.
-    registerFighterPosition(isPlayer, [px, 0, pz]);
+    registerFighterPosition(isPlayer ? 0 : 1, px, 0, pz);
   });
 
   return (

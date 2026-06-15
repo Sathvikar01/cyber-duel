@@ -266,7 +266,10 @@ export function resolveParry(attack, defender) {
     // Late/early parry becomes a normal hit. Pass a distance that is
     // inside the move's range band so the new edge-to-edge range
     // check doesn't false-reject the fallthrough hit.
-    const fallthroughDistance = data && data.optimalRange ? data.optimalRange : 2.0;
+    const attackData = MOVE_DATA[attack.move];
+    const fallthroughDistance = attackData && attackData.optimalRange != null
+      ? attackData.optimalRange
+      : 2.0;
     return resolveAttack(attack, { ...defender, anim: 'idle', isBlocking: false }, fallthroughDistance, 0);
   }
 
